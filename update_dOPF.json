@@ -10,6 +10,6 @@
   "UpdatePackageData" : {
     "DisableInOPM" : false,
     "DownloadZipURL" : "https://github.com/pascal-libs/dopf/archive/refs/tags/v3.2.0.0.zip",
-    "Name" : "dopf"
+    "Name" : "v3.2.0.0.zip"
   }
 }
