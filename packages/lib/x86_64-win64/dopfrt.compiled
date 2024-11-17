@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Lazarus Version="3.6"/>
+  <Compiler Value="C:\lazarus-stable\fpc\bin\x86_64-win64\fpc.exe" Date="1497435146"/>
+  <Params Value=" -MObjFPC -Scghi -O1 -g -gl -l -vewnhibq -FiC:\lazarus-stable\ccr\brookfreepascal\plugins\dopf\core -FuC:\lazarus-stable\ccr\brookfreepascal\plugins\dopf\core -FuC:\lazarus-stable\ccr\brookfreepascal\plugins\dopf\brokers -FuC:\lazarus-stable\lazarus\packager\units\x86_64-win64 -FuC:\lazarus-stable\ccr\brookfreepascal\plugins\dopf\packages\ -FUC:\lazarus-stable\ccr\brookfreepascal\plugins\dopf\packages\lib\x86_64-win64\ dopfrt.pas"/>
+</CONFIG>
