@@ -1,0 +1,15 @@
+{
+  "UpdateLazPackages" : [
+    {
+      "ForceNotify" : false,
+      "InternalVersion" : 1,
+      "Name" : "dopfrt.lpk",
+      "Version" : "3.2.0.0"
+    }
+  ],
+  "UpdatePackageData" : {
+    "DisableInOPM" : false,
+    "DownloadZipURL" : "https://github.com/pascal-libs/dopf/archive/refs/tags/v3.2.0.0.zip",
+    "Name" : "dopf"
+  }
+}

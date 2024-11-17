@@ -1,0 +1,33 @@
+{
+  "PackageData0" : {
+    "Name" : "dOPF",
+    "DisplayName" : "dOPF",
+    "Category" : "DataControls",
+    "CommunityDescription" : "Sleek, intuitive, and fast object persistence (opf/orm) for faster and easier database development",
+    "ExternalDependecies" : "",
+    "OrphanedPackage" : 0,
+    "RepositoryFileName" : "dOPF.zip",
+    "RepositoryFileSize" : 40536,
+    "RepositoryFileHash" : "77b87bc433b75cdf7d312a451934e9e1",
+    "RepositoryDate" : 4.5613996479965281E+004,
+    "PackageBaseDir" : "dopf\\/",
+    "HomePageURL" : "https://github.com/pascal-libs/dopf",
+    "DownloadURL" : "https://raw.githubusercontent.com/pascal-libs/dopf/main/update_dOPF.json",
+    "SVNURL" : ""
+  },
+  "PackageFiles0" : [
+    {
+      "Name" : "dopfrt.lpk",
+      "Description" : "Object Persistence Framework",
+      "Author" : "Silvio Clécio - https://github.com/silvioprog",
+      "License" : "See the file LICENSE, included in this distribution, for details about the copyright.",
+      "RelativeFilePath" : "packages\\/",
+      "VersionAsString" : "3.2.0.0",
+      "LazCompatibility" : "2.2.0, 2.2.4, 3.0.0, Trunk",
+      "FPCCompatibility" : "3.2.0, 3.2.2, 3.2.4, Trunk",
+      "SupportedWidgetSet" : "gtk2, win32/win64",
+      "PackageType" : 3,
+      "DependenciesAsString" : "FCL"
+    }
+  ]
+}
