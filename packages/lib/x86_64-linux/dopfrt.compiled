@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CONFIG>
-  <Lazarus Version="3.6"/>
-  <Compiler Value="C:\lazarus-stable\fpc\bin\x86_64-win64\fpc.exe" Date="1497435146"/>
-  <Params Value=" -Tlinux -MObjFPC -Scghi -Cg -O1 -g -gl -l -vewnhibq -FiC:\Users\mail\Documents\Projects\Lazarus\pascal-libs\dopf\core -FuC:\Users\mail\Documents\Projects\Lazarus\pascal-libs\dopf\core -FuC:\Users\mail\Documents\Projects\Lazarus\pascal-libs\dopf\brokers -FuC:\lazarus-stable\lazarus\packager\units\x86_64-linux -FuC:\Users\mail\Documents\Projects\Lazarus\pascal-libs\dopf\packages\ -FUC:\Users\mail\Documents\Projects\Lazarus\pascal-libs\dopf\packages\lib\x86_64-linux\ dopfrt.pas"/>
-</CONFIG>
