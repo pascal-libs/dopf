@@ -1,5 +1,5 @@
 This is the file LICENSE.txt, it applies to the dOPF
-(https://github.com/silvioprog/dopf), distributed by Silvio Clecio.
+(https://github.com/pascal-libs/dopf), distributed by Silvio Clecio.
 
 The source code of the dOPF is distributed under the GNU
 Lesser General Public License (see the file LGPL.2.1.txt) with the
