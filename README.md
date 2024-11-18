@@ -15,6 +15,23 @@ Many classes including various generic classes.
 Lazarus IDE / Freepascal
 
 ## Simple example
+
+### `TdGSQLdbOpf`
+This is a generic ORM (Object-Relational Mapping) operator that simplifies database operations.
+By specializing it with `TPerson`, it manages CRUD operations for the Person table directly, reducing boilerplate SQL code.
+
+### Apply:
+Apply commits any pending changes (e.g., inserts, updates, or deletes) to the database.
+
+### Add, Modify and Remove:
+Add: Adds a new record to the database.
+Modify: Updates an existing record based on the entity's ID.
+Remove: Deletes a record identified by the entity's ID.
+
+### Entities:
+Individual records are represented as instances of `TPerson`.
+Multiple records can be stored in a collection (Topf.TEntities), which is iterated using `for..in`.
+
 ```pascal
 program demo1;
 
@@ -82,6 +99,15 @@ begin
     opf.Get;
     WriteLn(opf.Entity.Id, ', ', opf.Entity.Name);
     WriteLn('Done.');
+    
+    WriteLn('Search for names containing "a" (order by id DESC)');
+    opf.Entity.Name := '%a%';
+    opf.Search(pers, nil,
+      'select * from person where name like (:name) order by id desc');
+    for i in pers do
+      WriteLn(i.Id, ', ', i.Name);
+    pers.Clear;
+    WriteLn('Done.');    
 
     opf.Apply;
   finally
