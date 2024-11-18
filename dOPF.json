@@ -23,9 +23,9 @@
       "License" : "See the file LICENSE, included in this distribution, for details about the copyright.",
       "RelativeFilePath" : "packages\\/",
       "VersionAsString" : "3.2.0.0",
-      "LazCompatibility" : "2.2.0, 2.2.4, 3.0.0, Trunk",
-      "FPCCompatibility" : "3.2.0, 3.2.2, 3.2.4, Trunk",
-      "SupportedWidgetSet" : "gtk2, win32/win64",
+      "LazCompatibility" : "Trunk, 3.6.0, 3.4.0, 3.2.0, 3.0.0, 2.2.4",
+      "FPCCompatibility" : "Trunk, 3.2.2, 3.2.0",
+      "SupportedWidgetSet" : "cocoa, gtk2, gtk3, qt, qt5, qt6, win32/win64, noGui",
       "PackageType" : 3,
       "DependenciesAsString" : "FCL"
     }
