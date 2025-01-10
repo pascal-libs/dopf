@@ -27,7 +27,7 @@ type
 
   TPersonOpf = class(specialize TdGSQLdbEntityOpf<TPerson>)
   protected
-    procedure DoUpdating(AEntity: T3); override;
+    procedure DoUpdating(AEntity: TPerson); override;
   public
     constructor Create; overload; virtual;
   end;
@@ -49,7 +49,7 @@ begin
   inherited Create(dbutils.con, 'person');
 end;
 
-procedure TPersonOpf.DoUpdating(AEntity: T3);
+procedure TPersonOpf.DoUpdating(AEntity: TPerson);
 begin
   case UpdateKind of
     ukAdd, ukModify: AEntity.Validate;
