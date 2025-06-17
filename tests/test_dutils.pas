@@ -19,6 +19,10 @@ type
 
 implementation
 
+uses
+  dClasses
+  ;
+
 procedure TTestDUtils.TestParameterizeSQLNilParams;
 var
   S: string;

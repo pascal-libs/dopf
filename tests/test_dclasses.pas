@@ -15,6 +15,10 @@ type
 
 implementation
 
+uses
+  SysUtils
+  ;
+
 procedure TTestDClasses.TestInheritances;
 begin
   AssertTrue(EdException.InheritsFrom(Exception));
