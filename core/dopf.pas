@@ -458,7 +458,7 @@ implementation
 
 procedure NotImplementedError;
 begin
-  raise EdNotImplemented.Create('Not implemended.');
+  raise EdNotImplemented.Create('Not implemented.');
 end;
 
 { TdLogger }
