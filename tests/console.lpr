@@ -3,7 +3,8 @@ program console;
 {$mode objfpc}{$H+}
 
 uses
-  Classes, consoletestrunner, test_insertbuilder
+  Classes, consoletestrunner,
+  test_insertbuilder, test_dclasses, test_dopf, test_dutils
   ;
 type
 
