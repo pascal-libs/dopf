@@ -5,8 +5,7 @@ unit test_insertbuilder;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testutils, testregistry,
-  dsqlbuilder;
+  Classes, SysUtils, fpcunit, testregistry, dsqlbuilder;
 
 type
   { TPerson }
