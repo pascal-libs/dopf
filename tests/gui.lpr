@@ -3,7 +3,8 @@ program gui;
 {$mode objfpc}{$H+}
 
 uses
-  Interfaces, Forms, GuiTestRunner, test_insertbuilder;
+  Interfaces, Forms, GuiTestRunner, test_insertbuilder, test_dOpfRelations
+  ;
 
 {$R *.res}
 

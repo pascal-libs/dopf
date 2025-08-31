@@ -16,8 +16,8 @@
     </CompilerOptions>
     <Description Value="Object Persistence Framework"/>
     <License Value="See the file LICENSE, included in this distribution, for details about the copyright."/>
-    <Version Major="3" Minor="2"/>
-    <Files Count="6">
+    <Version Major="3" Minor="2" Release="1"/>
+    <Files Count="8">
       <Item1>
         <Filename Value="..\core\dclasses.pas"/>
         <UnitName Value="dClasses"/>
@@ -42,6 +42,14 @@
         <Filename Value="..\core\dsqlbuilder.pas"/>
         <UnitName Value="dSqlBuilder"/>
       </Item6>
+      <Item7>
+        <Filename Value="..\core\dopfrelationshelpers.pas"/>
+        <UnitName Value="dOpfRelationsHelpers"/>
+      </Item7>
+      <Item8>
+        <Filename Value="..\core\dopfrelations.pas"/>
+        <UnitName Value="dOpfRelations"/>
+      </Item8>
     </Files>
     <CompatibilityMode Value="True"/>
     <RequiredPkgs Count="1">

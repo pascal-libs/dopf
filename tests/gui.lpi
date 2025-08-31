@@ -21,6 +21,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="..\core"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -49,6 +50,11 @@
               </Win32>
             </Options>
           </Linking>
+          <Other>
+            <CompilerMessages>
+              <IgnoredMessages idx6058="True"/>
+            </CompilerMessages>
+          </Other>
         </CompilerOptions>
       </Item>
       <Item Name="Release">
@@ -60,6 +66,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="..\core"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <CodeGeneration>
@@ -114,6 +121,21 @@
         <Filename Value="test_insertbuilder.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
+      <Unit>
+        <Filename Value="test_dopfrelations.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="test_dOpfRelations"/>
+      </Unit>
+      <Unit>
+        <Filename Value="..\core\dopfrelations.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="dOpfRelations"/>
+      </Unit>
+      <Unit>
+        <Filename Value="..\core\dopfrelationshelpers.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="dOpfRelationsHelpers"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
@@ -124,6 +146,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
+      <OtherUnitFiles Value="..\core"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Linking>
