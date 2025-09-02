@@ -35,13 +35,15 @@ type
     FLocalKey: string;
     FLoadStrategy: TdLoadStrategy;
     FLoaded: Boolean;
+    FTargetTableName: string;
   public
-    constructor Create(const APropertyName: string; ATargetClass: TClass;
-      ARelationType: TdRelationType; const AForeignKey: string;
-      const ALocalKey: string = 'id'; const AMappingTable: string = '');
+    constructor Create(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
+      ARelationType: TdRelationType; const AForeignKey: string; const ALocalKey: string = 'id';
+      const AMappingTable: string = '');
     property RelationType: TdRelationType read FRelationType;
     property PropertyName: string read FPropertyName;
     property TargetClass: TClass read FTargetClass;
+    property TargetTableName: string read FTargetTableName;
     property ForeignKey: string read FForeignKey;
     property LocalKey: string read FLocalKey;
     property MappingTable: string read FMappingTable;
@@ -82,20 +84,18 @@ type
     function GetRelationValue(const APropertyName: string): TObject;
 
     // Convenience methods for configuring relations
-    procedure HasOne(const APropertyName: string; ATargetClass: TClass;
+    procedure HasOne(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
       const AForeignKey: string; const ALocalKey: string = 'id');
-    procedure HasMany(const APropertyName: string; ATargetClass: TClass;
+    procedure HasMany(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
       const AForeignKey: string; const ALocalKey: string = 'id');
-    procedure BelongsTo(const APropertyName: string; ATargetClass: TClass;
+    procedure BelongsTo(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
       const AForeignKey: string; const ALocalKey: string = 'id');
-    procedure BelongsToMany(const APropertyName: string; ATargetClass: TClass;
+    procedure BelongsToMany(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
       const AMappingTable, AForeignKey, ALocalKey: string);
   end;
 
   { TdGRelationalOpf - extended OPF with relation support }
   generic TdGRelationalOpf<T1, T2; T3: TObject> = class(specialize TdGOpf<T1, T2, T3>)
-  public type
-    TRelatedEntities = specialize TFPGObjectList<TObject>;
   private
     function IsRelationalEntity(AEntity: T3): Boolean;
     function GetRelationalEntity(AEntity: T3): IdRelationalEntity;
@@ -106,7 +106,7 @@ type
 
     // Getting related data (returns TObject, needs type casting)
     function GetRelatedObject(AEntity: T3; const ARelationName: string): TObject;
-    function GetRelatedObjectList(AEntity: T3; const ARelationName: string): TRelatedEntities;
+    function GetRelatedObjectList(AEntity: T3; const ARelationName: string): TObjectList;
 
     // Saving with relations
     procedure SaveWithRelations(AEntity: T3);
@@ -124,35 +124,35 @@ type
     procedure LoadRelation(const ARelationName: string);
     procedure LoadAllRelations;
     function GetRelatedObject(const ARelationName: string): TObject;
-    function GetRelatedObjectList(const ARelationName: string): TObjectList;
+    function GetRelatedObject(aEntity: T3; const ARelationName: string): TObject;
+    function GetRelatedObjectList(const ARelationName: string): TObjectList;     
+    function GetRelatedObjectList(aEntity: T3; const ARelationName: string): TObjectList;
     procedure SaveWithRelations;
   end;
 
   { Typed helper classes for safe type casting }
-
   { TdGRelatedObjectHelper }
   generic TdGRelatedObjectHelper<T: class> = class(TdObject)
-  type
-    TEntities = specialize TFPGObjectList<T>;
   public
     class function SafeCast(AObject: TObject): T;
-    class function SafeCastList(AList: TObjectList): TEntities;
+    class function SafeCastList(AList: TObjectList): TObjectList;
   end;
 
 implementation
 
 uses
-  TypInfo, Variants;
+  TypInfo, Variants, dOpfTableRegistry
+  ;
 
 { TdRelationInfo }
 
-constructor TdRelationInfo.Create(const APropertyName: string; ATargetClass: TClass;
-  ARelationType: TdRelationType; const AForeignKey: string;
-  const ALocalKey: string; const AMappingTable: string);
+constructor TdRelationInfo.Create(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
+  ARelationType: TdRelationType; const AForeignKey: string; const ALocalKey: string; const AMappingTable: string);
 begin
   inherited Create;
   FPropertyName := APropertyName;
   FTargetClass := ATargetClass;
+  FTargetTableName := ATargetTableName;
   FRelationType := ARelationType;
   FForeignKey := AForeignKey;
   FLocalKey := ALocalKey;
@@ -226,32 +226,32 @@ begin
     Result := nil;
 end;
 
-procedure TdRelationalEntity.HasOne(const APropertyName: string; ATargetClass: TClass;
+procedure TdRelationalEntity.HasOne(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
   const AForeignKey: string; const ALocalKey: string);
 begin
-  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass,
-    rtOneToOne, AForeignKey, ALocalKey));
+  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass, ATargetTableName, rtOneToOne, AForeignKey,
+    ALocalKey));
 end;
 
-procedure TdRelationalEntity.HasMany(const APropertyName: string; ATargetClass: TClass;
+procedure TdRelationalEntity.HasMany(const APropertyName: string; ATargetClass: TClass; const ATargetTableName: string;
   const AForeignKey: string; const ALocalKey: string);
 begin
-  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass,
-    rtOneToMany, AForeignKey, ALocalKey));
+  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass, ATargetTableName, rtOneToMany, AForeignKey,
+    ALocalKey));
 end;
 
 procedure TdRelationalEntity.BelongsTo(const APropertyName: string; ATargetClass: TClass;
-  const AForeignKey: string; const ALocalKey: string);
+  const ATargetTableName: string; const AForeignKey: string; const ALocalKey: string);
 begin
-  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass,
-    rtManyToOne, AForeignKey, ALocalKey));
+  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass, ATargetTableName, rtManyToOne, AForeignKey,
+    ALocalKey));
 end;
 
 procedure TdRelationalEntity.BelongsToMany(const APropertyName: string; ATargetClass: TClass;
-  const AMappingTable, AForeignKey, ALocalKey: string);
+  const ATargetTableName: string; const AMappingTable, AForeignKey, ALocalKey: string);
 begin
-  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass,
-    rtManyToMany, AForeignKey, ALocalKey, AMappingTable));
+  FRelations.Add(TdRelationInfo.Create(APropertyName, ATargetClass, ATargetTableName, rtManyToMany, AForeignKey,
+    ALocalKey, AMappingTable));
 end;
 
 { TdGRelationalOpf }
@@ -276,7 +276,8 @@ var
   LocalKeyProp: PPropInfo;
   TempQuery: T2;
   RelatedObj: TObject;
-  RelatedList: TRelatedEntities;
+  RelatedList: TObjectList;
+  TargetTableName: string;
 begin
   if not IsRelationalEntity(AEntity) then
     raise EdOpf.CreateFmt('Entity "%s" does not support relations', [AEntity.ClassName]);
@@ -290,6 +291,13 @@ begin
 
   if RelInfo.Loaded then
     Exit; // Already loaded
+
+  // Getting the name of the target table
+  TargetTableName := RelInfo.TargetTableName;
+
+  // If the table name is not explicitly specified, we try to get it from the registry
+  if TargetTableName.IsEmpty then
+    TargetTableName := GetTableNameForClass(RelInfo.TargetClass);
 
   // Get local key value
   LocalKeyProp := GetPropInfo(PTypeInfo(AEntity.ClassInfo), RelInfo.LocalKey);
@@ -306,7 +314,7 @@ begin
         begin
           // SELECT * FROM target_table WHERE foreign_key = :local_value
           SQL := Format('SELECT * FROM %s WHERE %s = :local_value',
-            [LowerCase(RelInfo.TargetClass.ClassName), RelInfo.ForeignKey]);
+            [TargetTableName, RelInfo.ForeignKey]);
           TempQuery.SQL.Text := SQL;
           TempQuery.Param('local_value').Value := LocalKeyValue;
           TempQuery.Open;
@@ -323,12 +331,12 @@ begin
         begin
           // SELECT * FROM target_table WHERE foreign_key = :local_value
           SQL := Format('SELECT * FROM %s WHERE %s = :local_value',
-            [LowerCase(RelInfo.TargetClass.ClassName), RelInfo.ForeignKey]);
+            [TargetTableName, RelInfo.ForeignKey]);
           TempQuery.SQL.Text := SQL;
           TempQuery.Param('local_value').Value := LocalKeyValue;
           TempQuery.Open;
 
-          RelatedList := TRelatedEntities.Create;
+          RelatedList := TObjectList.Create;
           TempQuery.First;
           while not TempQuery.EOF do
           begin
@@ -346,15 +354,15 @@ begin
           // JOIN mapping_table m ON t.id = m.target_id
           // WHERE m.local_id = :local_value
           SQL := Format(
-            'SELECT t.* FROM %s t JOIN %s m ON t.%s = m.%s WHERE m.%s = :local_value',
-            [LowerCase(RelInfo.TargetClass.ClassName), RelInfo.MappingTable,
-             RelInfo.LocalKey, RelInfo.ForeignKey + '_target',
-             RelInfo.LocalKey + '_local']);
+            'SELECT t.* FROM %s t JOIN %s m ON t.%s = m.%s_target WHERE m.%s_local = :local_value',
+            [TargetTableName, RelInfo.MappingTable,
+             RelInfo.LocalKey, RelInfo.ForeignKey,
+             RelInfo.LocalKey]);
           TempQuery.SQL.Text := SQL;
           TempQuery.Param('local_value').Value := LocalKeyValue;
           TempQuery.Open;
 
-          RelatedList := TRelatedEntities.Create;
+          RelatedList := TObjectList.Create;
           TempQuery.First;
           while not TempQuery.EOF do
           begin
@@ -402,13 +410,12 @@ begin
   Result := RelEntity.GetRelationValue(ARelationName);
 end;
 
-function TdGRelationalOpf.GetRelatedObjectList(AEntity: T3;
-  const ARelationName: string): TRelatedEntities;
+function TdGRelationalOpf.GetRelatedObjectList(AEntity: T3; const ARelationName: string): TObjectList;
 var
   RelEntity: IdRelationalEntity;
   RelObj: TObject;
 begin
-  Result := TRelatedEntities.Create(False); // Doesn't own objects
+  Result := TObjectList.Create(False); // Doesn't own objects
 
   if not IsRelationalEntity(AEntity) then
     Exit;
@@ -419,10 +426,11 @@ begin
   LoadRelation(AEntity, ARelationName);
 
   RelObj := RelEntity.GetRelationValue(ARelationName);
-  if (RelObj <> nil) and (RelObj is TRelatedEntities) then
+  if (RelObj <> nil) and (RelObj is TObjectList) then
   begin
     Result.Free;
-    Result := TRelatedEntities(RelObj);
+    Result:=TObjectList.Create(False);
+    Result.Assign(TObjectList(RelObj));
   end;
 end;
 
@@ -432,7 +440,7 @@ var
   I: Integer;
   RelInfo: TdRelationInfo;
   RelObj: TObject;
-  RelList: TRelatedEntities;
+  RelList: TObjectList;
   J: Integer;
 begin
   // First save the main entity
@@ -464,9 +472,9 @@ begin
 
       rtOneToMany, rtManyToMany:
         begin
-          if RelObj is TRelatedEntities then
+          if RelObj is TObjectList then
           begin
-            RelList := TRelatedEntities(RelObj);
+            RelList := TObjectList(RelObj);
             for J := 0 to RelList.Count - 1 do
             begin
               // Save each related entity
@@ -522,33 +530,34 @@ begin
 end;
 
 function TdGRelationalEntityOpf.GetRelatedObject(const ARelationName: string): TObject;
+begin
+  Result:=GetRelatedObject(FEntity, ARelationName);
+end;
+
+function TdGRelationalEntityOpf.GetRelatedObject(aEntity: T3; const ARelationName: string): TObject;
 var
   RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
 begin
   RelOpf := specialize TdGRelationalOpf<T1, T2, T3>.Create(FConnection, FTable.Name);
   try
-    Result := RelOpf.GetRelatedObject(FEntity, ARelationName);
+    Result := RelOpf.GetRelatedObject(aEntity, ARelationName);
   finally
     RelOpf.Free;
   end;
 end;
 
 function TdGRelationalEntityOpf.GetRelatedObjectList(const ARelationName: string): TObjectList;
+begin
+  GetRelatedObjectList(FEntity, ARelationName);
+end;
+
+function TdGRelationalEntityOpf.GetRelatedObjectList(aEntity: T3; const ARelationName: string): TObjectList;
 var
   RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
-  TempList: specialize TFPGObjectList<TObject>;
-  I: Integer;
 begin
-  Result := TObjectList.Create(False); // Doesn't own objects
   RelOpf := specialize TdGRelationalOpf<T1, T2, T3>.Create(FConnection, FTable.Name);
   try
-    TempList := RelOpf.GetRelatedObjectList(FEntity, ARelationName);
-    try
-      for I := 0 to TempList.Count - 1 do
-        Result.Add(TempList[I]);
-    finally
-      TempList.Free;
-    end;
+    Result := RelOpf.GetRelatedObjectList(AEntity, ARelationName);
   finally
     RelOpf.Free;
   end;
@@ -564,12 +573,12 @@ begin
     Result := nil;
 end;
 
-class function TdGRelatedObjectHelper.SafeCastList(AList: TObjectList): TEntities;
+class function TdGRelatedObjectHelper.SafeCastList(AList: TObjectList): TObjectList;
 var
   I: Integer;
   CastedItem: T;
 begin
-  Result := TEntities.Create(False); // Doesn't own objects
+  Result := TObjectList.Create(False); // Doesn't own objects
   if AList = nil then
     Exit;
 

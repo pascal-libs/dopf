@@ -17,7 +17,7 @@
     <Description Value="Object Persistence Framework"/>
     <License Value="See the file LICENSE, included in this distribution, for details about the copyright."/>
     <Version Major="3" Minor="2" Release="1"/>
-    <Files Count="8">
+    <Files Count="9">
       <Item1>
         <Filename Value="..\core\dclasses.pas"/>
         <UnitName Value="dClasses"/>
@@ -50,6 +50,10 @@
         <Filename Value="..\core\dopfrelations.pas"/>
         <UnitName Value="dOpfRelations"/>
       </Item8>
+      <Item9>
+        <Filename Value="..\core\dopftableregistry.pas"/>
+        <UnitName Value="dOpfTableRegistry"/>
+      </Item9>
     </Files>
     <CompatibilityMode Value="True"/>
     <RequiredPkgs Count="1">

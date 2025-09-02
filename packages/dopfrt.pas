@@ -8,7 +8,7 @@ unit dOpfRT;
 interface
 
 uses
-  dClasses, dOpf, dUtils, dsqldbbroker, dSqlBuilder, dOpfRelationsHelpers, dOpfRelations;
+  dClasses, dOpf, dUtils, dsqldbbroker, dSqlBuilder, dOpfRelationsHelpers, dOpfRelations, dOpfTableRegistry;
 
 implementation
 

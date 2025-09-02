@@ -100,7 +100,7 @@ implementation
 
 procedure TTestPerson.ConfigureRelations(ARelations: TdRelationList);
 begin
-  HasMany('Orders', TTestOrder, 'person_id', 'id');
+  HasMany('Orders', TTestOrder, 'orders', 'person_id', 'id');
 end;
 
 { TTestAdvancedEntity }
@@ -123,7 +123,7 @@ procedure TTestRelationInfo.TestCreate;
 var
   RelInfo: TdRelationInfo;
 begin
-  RelInfo := TdRelationInfo.Create('Orders', TTestOrder, rtOneToMany, 'person_id');
+  RelInfo := TdRelationInfo.Create('Orders', TTestOrder, 'orders', rtOneToMany, 'person_id');
   try
     AssertNotNull('RelationInfo should be created', RelInfo);
     AssertEquals('Property name', 'Orders', RelInfo.PropertyName);
@@ -141,7 +141,7 @@ procedure TTestRelationInfo.TestProperties;
 var
   RelInfo: TdRelationInfo;
 begin
-  RelInfo := TdRelationInfo.Create('Profile', TTestPerson, rtOneToOne, 'person_id', 'user_id');
+  RelInfo := TdRelationInfo.Create('Profile', TTestPerson, 'profiles', rtOneToOne, 'person_id', 'user_id');
   try
     AssertEquals('Local key custom', 'user_id', RelInfo.LocalKey);
     AssertEquals('Load strategy default', Ord(lsLazy), Ord(RelInfo.LoadStrategy));
@@ -165,8 +165,8 @@ var
 begin
   Relations := TdRelationList.Create;
   try
-    Relations.Add(TdRelationInfo.Create('Orders', TTestOrder, rtOneToMany, 'person_id'));
-    Relations.Add(TdRelationInfo.Create('Profile', TTestPerson, rtOneToOne, 'person_id'));
+    Relations.Add(TdRelationInfo.Create('Orders', TTestOrder, 'orders', rtOneToMany, 'person_id'));
+    Relations.Add(TdRelationInfo.Create('Profile', TTestPerson, 'persons', rtOneToOne, 'person_id'));
 
     RelInfo := Relations.FindByProperty('Orders');
     AssertNotNull('Should find Orders relation', RelInfo);
@@ -187,10 +187,10 @@ begin
   try
     AssertEquals('Initial count', 0, Relations.Count);
 
-    Relations.Add(TdRelationInfo.Create('Orders', TTestOrder, rtOneToMany, 'person_id'));
+    Relations.Add(TdRelationInfo.Create('Orders', TTestOrder, 'orders', rtOneToMany, 'person_id'));
     AssertEquals('Count after add', 1, Relations.Count);
 
-    Relations.Add(TdRelationInfo.Create('Profile', TTestPerson, rtOneToOne, 'person_id'));
+    Relations.Add(TdRelationInfo.Create('Profile', TTestPerson, 'persons', rtOneToOne, 'person_id'));
     AssertEquals('Count after second add', 2, Relations.Count);
   finally
     Relations.Free;
@@ -247,25 +247,25 @@ begin
     Relations.Clear; // Clear automatically created relations
 
     // Test HasOne
-    Person.HasOne('Profile', TTestPerson, 'person_id');
+    Person.HasOne('Profile', TTestPerson, 'persons', 'person_id');
     AssertEquals('Should have one relation after HasOne', 1, Relations.Count);
     RelInfo := Relations[0];
     AssertEquals('HasOne relation type', Ord(rtOneToOne), Ord(RelInfo.RelationType));
 
     // Test HasMany
-    Person.HasMany('Orders', TTestOrder, 'person_id');
+    Person.HasMany('Orders', TTestOrder, 'orders', 'person_id');
     AssertEquals('Should have two relations after HasMany', 2, Relations.Count);
     RelInfo := Relations[1];
     AssertEquals('HasMany relation type', Ord(rtOneToMany), Ord(RelInfo.RelationType));
 
     // Test BelongsTo
-    Person.BelongsTo('Company', TTestPerson, 'company_id');
+    Person.BelongsTo('Company', TTestPerson, 'persons', 'company_id');
     AssertEquals('Should have three relations after BelongsTo', 3, Relations.Count);
     RelInfo := Relations[2];
     AssertEquals('BelongsTo relation type', Ord(rtManyToOne), Ord(RelInfo.RelationType));
 
     // Test BelongsToMany
-    Person.BelongsToMany('Tags', TTestOrder, 'person_tags', 'tag_id', 'person_id');
+    Person.BelongsToMany('Tags', TTestOrder, 'tags', 'person_tags', 'tag_id', 'person_id');
     AssertEquals('Should have four relations after BelongsToMany', 4, Relations.Count);
     RelInfo := Relations[3];
     AssertEquals('BelongsToMany relation type', Ord(rtManyToMany), Ord(RelInfo.RelationType));
@@ -433,7 +433,7 @@ var
   ValidRelation, InvalidRelation: TdRelationInfo;
 begin
   // Valid relation
-  ValidRelation := TdRelationInfo.Create('Orders', TTestOrder, rtOneToMany, 'person_id');
+  ValidRelation := TdRelationInfo.Create('Orders', TTestOrder, 'orders', rtOneToMany, 'person_id');
   try
     AssertTrue('Valid relation should pass validation',
       TdRelationValidator.ValidateRelation(ValidRelation));
@@ -442,7 +442,7 @@ begin
   end;
 
   // Invalid relation (missing property name)
-  InvalidRelation := TdRelationInfo.Create('', TTestOrder, rtOneToMany, 'person_id');
+  InvalidRelation := TdRelationInfo.Create('', TTestOrder, 'orders', rtOneToMany, 'person_id');
   try
     AssertFalse('Invalid relation should fail validation',
       TdRelationValidator.ValidateRelation(InvalidRelation));
@@ -476,7 +476,7 @@ var
   InvalidRelation: TdRelationInfo;
   Errors: TStringList;
 begin
-  InvalidRelation := TdRelationInfo.Create('', nil, rtManyToMany, '');
+  InvalidRelation := TdRelationInfo.Create('', nil, '', rtManyToMany, '');
   try
     Errors := TdRelationValidator.GetValidationErrors(InvalidRelation);
     try
