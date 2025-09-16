@@ -146,7 +146,7 @@ var
 begin
   PersonOpf := TPersonOpf.Create(GetConnection, 'person');
   try
-    RelatedObject := PersonOpf.GetRelatedObject(PersonOpf.Entity, 'Profile') as TProfile;
+    RelatedObject := PersonOpf.GetRelatedObject(Self, 'Profile') as TProfile;
     Result := specialize TdGRelatedObjectHelper<TProfile>.SafeCast(RelatedObject);
   finally
     PersonOpf.Free;

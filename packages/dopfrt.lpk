@@ -13,6 +13,11 @@
         <OtherUnitFiles Value="..\core;..\brokers"/>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
+      <Other>
+        <CompilerMessages>
+          <IgnoredMessages idx6058="True" idx3124="True" idx3123="True"/>
+        </CompilerMessages>
+      </Other>
     </CompilerOptions>
     <Description Value="Object Persistence Framework"/>
     <License Value="See the file LICENSE, included in this distribution, for details about the copyright."/>
