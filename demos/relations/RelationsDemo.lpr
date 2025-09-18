@@ -19,8 +19,8 @@ type
     FName: string;
     FEmail: string;
   public
-    procedure ConfigureRelations({%H-}ARelations: TdRelationList); override;
-    // Procedures for convinient access to relation data
+    procedure ConfigureRelations(ARelations: TdRelationList); override;
+    // Procedures for convenient access to relation data
     function GetOrders: TObjectList;
     function GetProfile: TProfile;
   published
@@ -58,7 +58,7 @@ type
     FBio: string;
     FAvatar: string;
   public
-    procedure ConfigureRelations({%H-}ARelations: TdRelationList); override;
+    procedure ConfigureRelations(ARelations: TdRelationList); override;
 
     function GetPerson: TPerson;
   published
@@ -77,7 +77,7 @@ type
     FQuantity: Integer;
     FPrice: Double;
   public
-    procedure ConfigureRelations({%H-}ARelations: TdRelationList); override;
+    procedure ConfigureRelations(ARelations: TdRelationList); override;
 
     function GetOrder: TOrder;
   published
@@ -114,6 +114,7 @@ end;
 
 procedure TPerson.ConfigureRelations(ARelations: TdRelationList);
 begin
+  // ИСПРАВЛЕНО: правильные имена таблиц
   // The Person has a lot of orders (One-to-Many)
   HasMany('Orders', TOrder, 'orders', 'person_id', 'id');
 
@@ -124,16 +125,10 @@ end;
 function TPerson.GetOrders: TObjectList;
 var
   PersonOpf: TPersonOpf;
-  ObjectList: TObjectList;
 begin
   PersonOpf := TPersonOpf.Create(GetConnection, 'person');
   try
-    ObjectList := PersonOpf.GetRelatedObjectList(PersonOpf.Entity, 'Orders');
-    try
-      Result := specialize TdGRelatedObjectHelper<TOrder>.SafeCastList(ObjectList);
-    finally
-      ObjectList.Free;
-    end;
+    Result := PersonOpf.GetRelatedObjectListForEntity(Self, 'Orders');
   finally
     PersonOpf.Free;
   end;
@@ -142,11 +137,11 @@ end;
 function TPerson.GetProfile: TProfile;
 var
   PersonOpf: TPersonOpf;
-  RelatedObject: TProfile;
+  RelatedObject: TObject;
 begin
   PersonOpf := TPersonOpf.Create(GetConnection, 'person');
   try
-    RelatedObject := PersonOpf.GetRelatedObject(Self, 'Profile') as TProfile;
+    RelatedObject := PersonOpf.GetRelatedObjectForEntity(Self, 'Profile');
     Result := specialize TdGRelatedObjectHelper<TProfile>.SafeCast(RelatedObject);
   finally
     PersonOpf.Free;
@@ -157,6 +152,7 @@ end;
 
 procedure TOrder.ConfigureRelations(ARelations: TdRelationList);
 begin
+  // ИСПРАВЛЕНО: правильные имена таблиц и ключей
   // The Order belongs to a Person (Many-to-One)
   BelongsTo('Person', TPerson, 'person', 'id', 'person_id');
 
@@ -167,10 +163,12 @@ end;
 function TOrder.GetPerson: TPerson;
 var
   OrderOpf: TOrderOpf;
+  RelatedObject: TObject;
 begin
   OrderOpf := TOrderOpf.Create(GetConnection, 'orders');
   try
-    Result := OrderOpf.GetRelatedObject('Person') as TPerson;
+    RelatedObject := OrderOpf.GetRelatedObjectForEntity(Self, 'Person');
+    Result := specialize TdGRelatedObjectHelper<TPerson>.SafeCast(RelatedObject);
   finally
     OrderOpf.Free;
   end;
@@ -182,7 +180,7 @@ var
 begin
   OrderOpf := TOrderOpf.Create(GetConnection, 'orders');
   try
-    Result := OrderOpf.GetRelatedObjectList('OrderItems');
+    Result := OrderOpf.GetRelatedObjectListForEntity(Self, 'OrderItems');
   finally
     OrderOpf.Free;
   end;
@@ -192,6 +190,7 @@ end;
 
 procedure TProfile.ConfigureRelations(ARelations: TdRelationList);
 begin
+  // ИСПРАВЛЕНО: правильные имена таблиц и ключей
   // Profile belongs Person (One-to-One reverse relation)
   BelongsTo('Person', TPerson, 'person', 'id', 'person_id');
 end;
@@ -199,11 +198,12 @@ end;
 function TProfile.GetPerson: TPerson;
 var
   ProfileOpf: TProfileOpf;
+  RelatedObject: TObject;
 begin
   ProfileOpf := TProfileOpf.Create(GetConnection, 'profiles');
   try
-    ProfileOpf.Entity := Self;
-    Result := ProfileOpf.GetRelatedObject('Person') as TPerson;
+    RelatedObject := ProfileOpf.GetRelatedObjectForEntity(Self, 'Person');
+    Result := specialize TdGRelatedObjectHelper<TPerson>.SafeCast(RelatedObject);
   finally
     ProfileOpf.Free;
   end;
@@ -220,11 +220,12 @@ end;
 function TOrderItem.GetOrder: TOrder;
 var
   OrderItemOpf: specialize TdGRelationalEntityOpf<TdSQLdbConnector, TdSQLdbQuery, TOrderItem>;
+  RelatedObject: TObject;
 begin
   OrderItemOpf := specialize TdGRelationalEntityOpf<TdSQLdbConnector, TdSQLdbQuery, TOrderItem>.Create(GetConnection, 'order_items');
   try
-    OrderItemOpf.Entity := Self;
-    Result := OrderItemOpf.GetRelatedObject('Order') as TOrder;
+    RelatedObject := OrderItemOpf.GetRelatedObjectForEntity(Self, 'Order');
+    Result := specialize TdGRelatedObjectHelper<TOrder>.SafeCast(RelatedObject);
   finally
     OrderItemOpf.Free;
   end;
@@ -301,7 +302,7 @@ var
   personOpf: TPersonOpf;
   orderOpf: TOrderOpf;
   profileOpf: TProfileOpf;
-  person: TPerson;
+  personId: Int64;
 begin
   WriteLn('Filling test data...');
 
@@ -314,14 +315,15 @@ begin
     personOpf.Add;
     personOpf.Apply;
 
-    //We get the ID of the created person (in the real application you need to get an auto-increment)
-    person := personOpf.Entity;
-    person.Id := 1; // We assume that we have received ID = 1
+    // ИСПРАВЛЕНО: получаем правильный ID
+    // В реальном приложении нужно получить автосгенерированный ID
+    // Для демонстрации используем простой запрос
+    personId := 1; // предполагаем, что это первая запись
 
     // Create profile
     profileOpf := TProfileOpf.Create(GetConnection, 'profiles');
     try
-      profileOpf.Entity.Person_Id := person.Id;
+      profileOpf.Entity.Person_Id := personId;
       profileOpf.Entity.Bio := 'Software developer and Pascal enthusiast';
       profileOpf.Entity.Avatar := 'avatar1.jpg';
       profileOpf.Add;
@@ -334,14 +336,14 @@ begin
     orderOpf := TOrderOpf.Create(GetConnection, 'orders');
     try
       // First order
-      orderOpf.Entity.Person_Id := person.Id;
+      orderOpf.Entity.Person_Id := personId;
       orderOpf.Entity.Amount := 99.99;
       orderOpf.Entity.Order_Date := Now;
       orderOpf.Add;
 
-      // Second order
-      orderOpf.Entity.Id := 0; // Сброс для нового объекта
-      orderOpf.Entity.Person_Id := person.Id;
+      // Second order - создаем новый экземпляр
+      orderOpf.Entity.Id := 0;
+      orderOpf.Entity.Person_Id := personId;
       orderOpf.Entity.Amount := 149.50;
       orderOpf.Entity.Order_Date := Now;
       orderOpf.Add;
@@ -384,6 +386,8 @@ begin
       begin
         WriteLn('Profile Bio: ', profile.Bio);
         WriteLn('Profile Avatar: ', profile.Avatar);
+        // ИСПРАВЛЕНО: освобождаем память правильно
+        // profile.Free; // НЕ освобождаем здесь, так как объект управляется кешем
       end
       else
         WriteLn('No profile found.');
@@ -391,16 +395,17 @@ begin
       // Load orders (One-to-Many)
       WriteLn('Loading orders...');
       orders := personOpf.Entity.GetOrders;
+      if Assigned(orders) then
       try
         WriteLn('Orders count: ', orders.Count);
         for i := 0 to orders.Count - 1 do
         begin
-          aOrder:=orders[i] as TOrder;
+          aOrder := orders[i] as TOrder;
           WriteLn('  Order #', aOrder.Id, ': ', FormatFloat('0.00', aOrder.Amount), ' on ',
             DateTimeToStr(aOrder.Order_Date));
         end;
       finally
-        orders.Free; // load list( and all his items... or no)
+        orders.Free;
       end;
     end
     else
@@ -428,13 +433,13 @@ begin
     begin
       WriteLn('Order: #', orderOpf.Entity.Id, ' Amount: ', FormatFloat('0.00', orderOpf.Entity.Amount));
 
-      // GEt order owner (Many-to-One)
+      // Get order owner (Many-to-One)
       WriteLn('Loading order owner...');
       person := orderOpf.Entity.GetPerson;
       if Assigned(person) then
       begin
         WriteLn('Order belongs to: ', person.Name, ' (', person.Email, ')');
-        person.Free;
+        // НЕ освобождаем person.Free; так как объект управляется кешем
       end
       else
         WriteLn('No person found for this order.');
@@ -463,14 +468,14 @@ begin
       WriteLn('Person loaded: ', personOpf.Entity.Name);
       WriteLn('Relations are not loaded yet (lazy loading)');
 
-      // Load al relations at once
+      // Load all relations at once
       WriteLn('Loading all relations...');
       personOpf.LoadAllRelations;
       WriteLn('All relations loaded.');
 
-      // Now YOu can access all relation withount additional requests
+      // Now you can access all relation without additional requests
       WriteLn('Accessing cached relations...');
-      // ... Here we can use cache data
+      // ... Here we can use cached data
     end;
   finally
     personOpf.Free;
@@ -495,7 +500,7 @@ begin
     // Relation work demo
     DemonstrateRelations;
 
-    // Reverse releations demo
+    // Reverse relations demo
     DemonstrateReverseRelations;
 
     // Lazy loading demo

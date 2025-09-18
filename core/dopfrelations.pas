@@ -122,11 +122,15 @@ type
     function GetRelationalEntity: IdRelationalEntity;
   public
     procedure LoadRelation(const ARelationName: string);
+    procedure LoadRelationForEntity(AEntity: T3; const ARelationName: string);
     procedure LoadAllRelations;
+    procedure LoadAllRelationsForEntity(AEntity: T3);
     function GetRelatedObject(const ARelationName: string): TObject;
-    function GetRelatedObject(aEntity: T3; const ARelationName: string): TObject;
+    function GetRelatedObject(aEntity: T3; const ARelationName: string): TObject;         
+    function GetRelatedObjectForEntity(AEntity: T3; const ARelationName: string): TObject;
     function GetRelatedObjectList(const ARelationName: string): TObjectList;     
     function GetRelatedObjectList(aEntity: T3; const ARelationName: string): TObjectList;
+    function GetRelatedObjectListForEntity(AEntity: T3; const ARelationName: string): TObjectList;
     procedure SaveWithRelations;
   end;
 
@@ -141,7 +145,7 @@ type
 implementation
 
 uses
-  TypInfo, Variants, dOpfTableRegistry
+  TypInfo, Variants, dOpfTableRegistry, DB
   ;
 
 { TdRelationInfo }
@@ -267,6 +271,7 @@ begin
     raise EdOpf.CreateFmt('Entity "%s" does not support relations', [AEntity.ClassName]);
 end;
 
+// Исправленная процедура LoadRelation в TdGRelationalOpf
 procedure TdGRelationalOpf.LoadRelation(AEntity: T3; const ARelationName: string);
 var
   RelEntity: IdRelationalEntity;
@@ -278,6 +283,7 @@ var
   RelatedObj: TObject;
   RelatedList: TObjectList;
   TargetTableName: string;
+  aLocalKeyValue: Integer;
 begin
   if not IsRelationalEntity(AEntity) then
     raise EdOpf.CreateFmt('Entity "%s" does not support relations', [AEntity.ClassName]);
@@ -305,6 +311,13 @@ begin
     raise EdOpf.CreateFmt('Local key property "%s" not found', [RelInfo.LocalKey]);
 
   LocalKeyValue := GetVariantProp(AEntity, LocalKeyProp);
+  aLocalKeyValue:=Integer(LocalKeyValue);
+
+  WriteLn('DEBUG: Loading relation "', ARelationName, '" for entity ', AEntity.ClassName);
+  WriteLn('DEBUG: Target table: ', TargetTableName);
+  WriteLn('DEBUG: Local key value: ', VarToStr(LocalKeyValue));
+  WriteLn('DEBUG: Foreign key: ', RelInfo.ForeignKey);
+  WriteLn('DEBUG: Relation type: ', Ord(RelInfo.RelationType));
 
   // Create temporary query for loading related data
   TempQuery := T2.Create(FConnection);
@@ -312,11 +325,19 @@ begin
     case RelInfo.RelationType of
       rtOneToOne, rtManyToOne:
         begin
-          // SELECT * FROM target_table WHERE foreign_key = :local_value
-          SQL := Format('SELECT * FROM %s WHERE %s = :local_value',
+          // ИСПРАВЛЕНО: правильный SQL-запрос для отношений
+          // Для rtOneToOne и rtManyToOne используем foreign_key для поиска
+          SQL := Format('SELECT * FROM %s WHERE %s = :param1',
             [TargetTableName, RelInfo.ForeignKey]);
           TempQuery.SQL.Text := SQL;
-          TempQuery.Param('local_value').Value := LocalKeyValue;
+          TempQuery.SQL.Add('ORDER BY id LIMIT 1'); // Для OneToOne берем только первую запись
+
+          // Добавляем параметр
+          TempQuery.Params.ParamByName('param1').Value:=LocalKeyValue;
+
+          WriteLn('DEBUG: SQL: ', TempQuery.SQL.Text);
+          WriteLn('DEBUG: Param value: ', VarToStr(LocalKeyValue));
+
           TempQuery.Open;
 
           if not TempQuery.IsEmpty then
@@ -324,28 +345,38 @@ begin
             RelatedObj := RelInfo.TargetClass.Create;
             TempQuery.GetFields(RelatedObj);
             RelEntity.SetRelationValue(ARelationName, RelatedObj);
-          end;
+            WriteLn('DEBUG: Found related object');
+          end
+          else
+            WriteLn('DEBUG: No related objects found');
         end;
 
       rtOneToMany:
         begin
           // SELECT * FROM target_table WHERE foreign_key = :local_value
-          SQL := Format('SELECT * FROM %s WHERE %s = :local_value',
+          SQL := Format('SELECT * FROM %s WHERE %s = :param1',
             [TargetTableName, RelInfo.ForeignKey]);
           TempQuery.SQL.Text := SQL;
-          TempQuery.Param('local_value').Value := LocalKeyValue;
+
+          // Добавляем параметр
+          TempQuery.Params.ParamByName('param1').Value:=LocalKeyValue;
+
+          WriteLn('DEBUG: SQL: ', TempQuery.SQL.Text);
+
           TempQuery.Open;
 
-          RelatedList := TObjectList.Create;
+          RelatedList := TObjectList.Create(True); // OwnsObjects = True
           TempQuery.First;
           while not TempQuery.EOF do
           begin
             RelatedObj := RelInfo.TargetClass.Create;
             TempQuery.GetFields(RelatedObj);
             RelatedList.Add(RelatedObj);
+            WriteLn('DEBUG: Added related object to list');
             TempQuery.Next;
           end;
           RelEntity.SetRelationValue(ARelationName, RelatedList);
+          WriteLn('DEBUG: Found ', RelatedList.Count, ' related objects');
         end;
 
       rtManyToMany:
@@ -354,15 +385,18 @@ begin
           // JOIN mapping_table m ON t.id = m.target_id
           // WHERE m.local_id = :local_value
           SQL := Format(
-            'SELECT t.* FROM %s t JOIN %s m ON t.%s = m.%s_target WHERE m.%s_local = :local_value',
+            'SELECT t.* FROM %s t JOIN %s m ON t.%s = m.%s_target WHERE m.%s_local = :param1',
             [TargetTableName, RelInfo.MappingTable,
              RelInfo.LocalKey, RelInfo.ForeignKey,
              RelInfo.LocalKey]);
           TempQuery.SQL.Text := SQL;
-          TempQuery.Param('local_value').Value := LocalKeyValue;
+
+          // Добавляем параметр
+          TempQuery.Params.ParamByName('param1').Value:=LocalKeyValue;
+
           TempQuery.Open;
 
-          RelatedList := TObjectList.Create;
+          RelatedList := TObjectList.Create(True);
           TempQuery.First;
           while not TempQuery.EOF do
           begin
@@ -517,6 +551,18 @@ begin
   end;
 end;
 
+procedure TdGRelationalEntityOpf.LoadRelationForEntity(AEntity: T3; const ARelationName: string);
+var
+  RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
+begin
+  RelOpf := specialize TdGRelationalOpf<T1, T2, T3>.Create(FConnection, FTable.Name);
+  try
+    RelOpf.LoadRelation(AEntity, ARelationName);
+  finally
+    RelOpf.Free;
+  end;
+end;
+
 procedure TdGRelationalEntityOpf.LoadAllRelations;
 var
   RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
@@ -529,9 +575,33 @@ begin
   end;
 end;
 
+procedure TdGRelationalEntityOpf.LoadAllRelationsForEntity(AEntity: T3);
+var
+  RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
+begin
+  RelOpf := specialize TdGRelationalOpf<T1, T2, T3>.Create(FConnection, FTable.Name);
+  try
+    RelOpf.LoadAllRelations(AEntity);
+  finally
+    RelOpf.Free;
+  end;
+end;
+
 function TdGRelationalEntityOpf.GetRelatedObject(const ARelationName: string): TObject;
 begin
   Result:=GetRelatedObject(FEntity, ARelationName);
+end;
+
+function TdGRelationalEntityOpf.GetRelatedObjectForEntity(AEntity: T3; const ARelationName: string): TObject;
+var
+  RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
+begin
+  RelOpf := specialize TdGRelationalOpf<T1, T2, T3>.Create(FConnection, FTable.Name);
+  try
+    Result := RelOpf.GetRelatedObject(AEntity, ARelationName);
+  finally
+    RelOpf.Free;
+  end;
 end;
 
 function TdGRelationalEntityOpf.GetRelatedObject(aEntity: T3; const ARelationName: string): TObject;
@@ -552,6 +622,18 @@ begin
 end;
 
 function TdGRelationalEntityOpf.GetRelatedObjectList(aEntity: T3; const ARelationName: string): TObjectList;
+var
+  RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
+begin
+  RelOpf := specialize TdGRelationalOpf<T1, T2, T3>.Create(FConnection, FTable.Name);
+  try
+    Result := RelOpf.GetRelatedObjectList(AEntity, ARelationName);
+  finally
+    RelOpf.Free;
+  end;
+end;
+
+function TdGRelationalEntityOpf.GetRelatedObjectListForEntity(AEntity: T3; const ARelationName: string): TObjectList;
 var
   RelOpf: specialize TdGRelationalOpf<T1, T2, T3>;
 begin
