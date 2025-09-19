@@ -50,8 +50,29 @@ procedure dSetParams(APropList: PPropList; const APropCount: Integer;
   const AUseUtf8: Boolean = False); overload;
 procedure dSetParams(AObject: TObject; AParams: TParams;
   const ANulls: Boolean = False; const AUseUtf8: Boolean = False); overload;
+function GetKeyPropValue(AObject: TObject; const APropName: string): string;
 
 implementation
+
+
+function GetKeyPropValue(AObject: TObject; const APropName: string): string;
+var
+  PropInfo: PPropInfo;
+begin
+  PropInfo := GetPropInfo(AObject, APropName);
+  if PropInfo = nil then
+    Exit(EmptyStr);
+
+  case PropInfo^.PropType^.Kind of
+    tkInteger, tkInt64, tkQWord:
+      Result := IntToStr(GetInt64Prop(AObject, PropInfo));
+    tkString, tkLString, tkWString, tkUString:
+      Result := GetStrProp(AObject, PropInfo);
+    else
+      // fallback for any cases
+      Result := EmptyStr;
+  end;
+end;
 
 procedure dParameterizeSQL(var ASql: string; AParams: TParams;
   const ANulls: Boolean);

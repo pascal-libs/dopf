@@ -15,16 +15,16 @@ type
   { TPerson }
   TPerson = class(TdRelationalEntity)
   private
-    FId: Int64;
+    FId: Integer;
     FName: string;
     FEmail: string;
   public
-    procedure ConfigureRelations(ARelations: TdRelationList); override;
+    procedure ConfigureRelations({%H-}ARelations: TdRelationList); override;
     // Procedures for convenient access to relation data
     function GetOrders: TObjectList;
     function GetProfile: TProfile;
   published
-    property Id: Int64 read FId write FId;
+    property id: Integer read FId write FId;
     property Name: string read FName write FName;
     property Email: string read FEmail write FEmail;
   end;
@@ -58,11 +58,11 @@ type
     FBio: string;
     FAvatar: string;
   public
-    procedure ConfigureRelations(ARelations: TdRelationList); override;
+    procedure ConfigureRelations({%H-}ARelations: TdRelationList); override;
 
     function GetPerson: TPerson;
   published
-    property Id: Int64 read FId write FId;
+    property id: Int64 read FId write FId;
     property Person_Id: Int64 read FPersonId write FPersonId;
     property Bio: string read FBio write FBio;
     property Avatar: string read FAvatar write FAvatar;
@@ -77,7 +77,7 @@ type
     FQuantity: Integer;
     FPrice: Double;
   public
-    procedure ConfigureRelations(ARelations: TdRelationList); override;
+    procedure ConfigureRelations({%H-}ARelations: TdRelationList); override;
 
     function GetOrder: TOrder;
   published
@@ -114,7 +114,6 @@ end;
 
 procedure TPerson.ConfigureRelations(ARelations: TdRelationList);
 begin
-  // ИСПРАВЛЕНО: правильные имена таблиц
   // The Person has a lot of orders (One-to-Many)
   HasMany('Orders', TOrder, 'orders', 'person_id', 'id');
 
@@ -152,7 +151,6 @@ end;
 
 procedure TOrder.ConfigureRelations(ARelations: TdRelationList);
 begin
-  // ИСПРАВЛЕНО: правильные имена таблиц и ключей
   // The Order belongs to a Person (Many-to-One)
   BelongsTo('Person', TPerson, 'person', 'id', 'person_id');
 
@@ -190,7 +188,6 @@ end;
 
 procedure TProfile.ConfigureRelations(ARelations: TdRelationList);
 begin
-  // ИСПРАВЛЕНО: правильные имена таблиц и ключей
   // Profile belongs Person (One-to-One reverse relation)
   BelongsTo('Person', TPerson, 'person', 'id', 'person_id');
 end;
@@ -315,10 +312,7 @@ begin
     personOpf.Add;
     personOpf.Apply;
 
-    // ИСПРАВЛЕНО: получаем правильный ID
-    // В реальном приложении нужно получить автосгенерированный ID
-    // Для демонстрации используем простой запрос
-    personId := 1; // предполагаем, что это первая запись
+    personId := 1; // We assume that this is the first entry
 
     // Create profile
     profileOpf := TProfileOpf.Create(GetConnection, 'profiles');
@@ -341,7 +335,7 @@ begin
       orderOpf.Entity.Order_Date := Now;
       orderOpf.Add;
 
-      // Second order - создаем новый экземпляр
+      // Second order - creating a new instance
       orderOpf.Entity.Id := 0;
       orderOpf.Entity.Person_Id := personId;
       orderOpf.Entity.Amount := 149.50;
@@ -386,8 +380,6 @@ begin
       begin
         WriteLn('Profile Bio: ', profile.Bio);
         WriteLn('Profile Avatar: ', profile.Avatar);
-        // ИСПРАВЛЕНО: освобождаем память правильно
-        // profile.Free; // НЕ освобождаем здесь, так как объект управляется кешем
       end
       else
         WriteLn('No profile found.');
@@ -439,7 +431,7 @@ begin
       if Assigned(person) then
       begin
         WriteLn('Order belongs to: ', person.Name, ' (', person.Email, ')');
-        // НЕ освобождаем person.Free; так как объект управляется кешем
+        // DO NOT release the person.Free; since the object is managed by the cache
       end
       else
         WriteLn('No person found for this order.');

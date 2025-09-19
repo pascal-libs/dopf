@@ -17,7 +17,8 @@ unit dOpfRelations;
 interface
 
 uses
-  dClasses, dOpf, Classes, SysUtils, Contnrs, FGL;
+  dClasses, dOpf, Classes, SysUtils, Contnrs, FGL, dUtils
+  ;
 
 type
   TdRelationType = (rtOneToOne, rtOneToMany, rtManyToOne, rtManyToMany);
@@ -271,19 +272,18 @@ begin
     raise EdOpf.CreateFmt('Entity "%s" does not support relations', [AEntity.ClassName]);
 end;
 
-// Исправленная процедура LoadRelation в TdGRelationalOpf
 procedure TdGRelationalOpf.LoadRelation(AEntity: T3; const ARelationName: string);
 var
   RelEntity: IdRelationalEntity;
   RelInfo: TdRelationInfo;
-  SQL: string;
-  LocalKeyValue: Variant;
-  LocalKeyProp: PPropInfo;
-  TempQuery: T2;
-  RelatedObj: TObject;
-  RelatedList: TObjectList;
+  LocalKeyValue: String;
   TargetTableName: string;
-  aLocalKeyValue: Integer;
+
+  TempQuery: T2;
+  TempEntity: TObject;
+  RelatedList: TObjectList;
+  ConditionSQL: string;
+
 begin
   if not IsRelationalEntity(AEntity) then
     raise EdOpf.CreateFmt('Entity "%s" does not support relations', [AEntity.ClassName]);
@@ -300,116 +300,99 @@ begin
 
   // Getting the name of the target table
   TargetTableName := RelInfo.TargetTableName;
-
-  // If the table name is not explicitly specified, we try to get it from the registry
   if TargetTableName.IsEmpty then
     TargetTableName := GetTableNameForClass(RelInfo.TargetClass);
 
-  // Get local key value
-  LocalKeyProp := GetPropInfo(PTypeInfo(AEntity.ClassInfo), RelInfo.LocalKey);
-  if LocalKeyProp = nil then
-    raise EdOpf.CreateFmt('Local key property "%s" not found', [RelInfo.LocalKey]);
+  // Getting the local key value using RTTI
+  LocalKeyValue := GetKeyPropValue(AEntity, RelInfo.LocalKey);
 
-  LocalKeyValue := GetVariantProp(AEntity, LocalKeyProp);
-  aLocalKeyValue:=Integer(LocalKeyValue);
+  if LocalKeyValue.IsEmpty then
+    Exit;
 
-  WriteLn('DEBUG: Loading relation "', ARelationName, '" for entity ', AEntity.ClassName);
-  WriteLn('DEBUG: Target table: ', TargetTableName);
-  WriteLn('DEBUG: Local key value: ', VarToStr(LocalKeyValue));
-  WriteLn('DEBUG: Foreign key: ', RelInfo.ForeignKey);
-  WriteLn('DEBUG: Relation type: ', Ord(RelInfo.RelationType));
-
-  // Create temporary query for loading related data
+  // Creating a request to get related data
   TempQuery := T2.Create(FConnection);
   try
     case RelInfo.RelationType of
       rtOneToOne, rtManyToOne:
         begin
-          // ИСПРАВЛЕНО: правильный SQL-запрос для отношений
-          // Для rtOneToOne и rtManyToOne используем foreign_key для поиска
-          SQL := Format('SELECT * FROM %s WHERE %s = :param1',
-            [TargetTableName, RelInfo.ForeignKey]);
-          TempQuery.SQL.Text := SQL;
-          TempQuery.SQL.Add('ORDER BY id LIMIT 1'); // Для OneToOne берем только первую запись
+          // Creating SQL to search for a related record
+          ConditionSQL := Format('SELECT * FROM %s WHERE %s = :%s',
+            [TargetTableName, RelInfo.ForeignKey, RelInfo.ForeignKey]);
 
-          // Добавляем параметр
-          TempQuery.Params.ParamByName('param1').Value:=LocalKeyValue;
-
-          WriteLn('DEBUG: SQL: ', TempQuery.SQL.Text);
-          WriteLn('DEBUG: Param value: ', VarToStr(LocalKeyValue));
-
+          TempQuery.SQL.Text := ConditionSQL;
+          TempQuery.Params.CreateParam(ftUnknown, RelInfo.ForeignKey, ptInput).AsString := LocalKeyValue;
           TempQuery.Open;
 
           if not TempQuery.IsEmpty then
           begin
-            RelatedObj := RelInfo.TargetClass.Create;
-            TempQuery.GetFields(RelatedObj);
-            RelEntity.SetRelationValue(ARelationName, RelatedObj);
-            WriteLn('DEBUG: Found related object');
-          end
-          else
-            WriteLn('DEBUG: No related objects found');
+            TempEntity := RelInfo.TargetClass.Create;
+            dUtils.dGetFields(TempEntity, TempQuery.Fields, FQuery.Nulls, FQuery.UseUtf8);
+
+            RelEntity.SetRelationValue(ARelationName, TempEntity);
+          end;
         end;
 
       rtOneToMany:
         begin
-          // SELECT * FROM target_table WHERE foreign_key = :local_value
-          SQL := Format('SELECT * FROM %s WHERE %s = :param1',
-            [TargetTableName, RelInfo.ForeignKey]);
-          TempQuery.SQL.Text := SQL;
+          ConditionSQL := Format('SELECT * FROM %s WHERE %s = :%s ORDER BY id',
+            [TargetTableName, RelInfo.ForeignKey, RelInfo.ForeignKey]);
 
-          // Добавляем параметр
-          TempQuery.Params.ParamByName('param1').Value:=LocalKeyValue;
-
-          WriteLn('DEBUG: SQL: ', TempQuery.SQL.Text);
+          TempQuery.SQL.Text := ConditionSQL;
+          TempQuery.Params.CreateParam(ftUnknown, RelInfo.ForeignKey, ptInput);
+          TempQuery.Params.ParamByName(RelInfo.ForeignKey).Value := LocalKeyValue;
 
           TempQuery.Open;
 
           RelatedList := TObjectList.Create(True); // OwnsObjects = True
+
           TempQuery.First;
           while not TempQuery.EOF do
           begin
-            RelatedObj := RelInfo.TargetClass.Create;
-            TempQuery.GetFields(RelatedObj);
-            RelatedList.Add(RelatedObj);
-            WriteLn('DEBUG: Added related object to list');
+            TempEntity := RelInfo.TargetClass.Create;
+
+            dUtils.dGetFields(TempEntity, TempQuery.Fields, FQuery.Nulls, FQuery.UseUtf8);
+
+            RelatedList.Add(TempEntity);
             TempQuery.Next;
           end;
+
           RelEntity.SetRelationValue(ARelationName, RelatedList);
-          WriteLn('DEBUG: Found ', RelatedList.Count, ' related objects');
         end;
 
       rtManyToMany:
         begin
-          // SELECT t.* FROM target_table t
-          // JOIN mapping_table m ON t.id = m.target_id
-          // WHERE m.local_id = :local_value
-          SQL := Format(
-            'SELECT t.* FROM %s t JOIN %s m ON t.%s = m.%s_target WHERE m.%s_local = :param1',
+          // Для Many-to-Many
+          ConditionSQL := Format(
+            'SELECT t.* FROM %s t ' +
+            'INNER JOIN %s m ON t.id = m.%s ' +
+            'WHERE m.%s = :%s ' +
+            'ORDER BY t.id',
             [TargetTableName, RelInfo.MappingTable,
-             RelInfo.LocalKey, RelInfo.ForeignKey,
-             RelInfo.LocalKey]);
-          TempQuery.SQL.Text := SQL;
+             RelInfo.ForeignKey, RelInfo.LocalKey + '_id', RelInfo.LocalKey + '_id']);
 
-          // Добавляем параметр
-          TempQuery.Params.ParamByName('param1').Value:=LocalKeyValue;
+          TempQuery.SQL.Text := ConditionSQL;
+          TempQuery.Params.CreateParam(ftUnknown, RelInfo.LocalKey + '_id', ptInput);
+          TempQuery.Params.ParamByName(RelInfo.LocalKey + '_id').Value := LocalKeyValue;
 
           TempQuery.Open;
 
           RelatedList := TObjectList.Create(True);
+
           TempQuery.First;
           while not TempQuery.EOF do
           begin
-            RelatedObj := RelInfo.TargetClass.Create;
-            TempQuery.GetFields(RelatedObj);
-            RelatedList.Add(RelatedObj);
+            TempEntity := RelInfo.TargetClass.Create;
+            dUtils.dGetFields(TempEntity, TempQuery.Fields, FQuery.Nulls, FQuery.UseUtf8);
+            RelatedList.Add(TempEntity);
             TempQuery.Next;
           end;
+
           RelEntity.SetRelationValue(ARelationName, RelatedList);
         end;
     end;
 
     RelInfo.Loaded := True;
+
   finally
     TempQuery.Free;
   end;
