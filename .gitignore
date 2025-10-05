@@ -38,3 +38,4 @@ lib/
 # Application bundle for Mac OS
 *.app/
 *.conf
+demos/relations/relations_demo.sqlite3

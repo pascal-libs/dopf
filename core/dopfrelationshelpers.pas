@@ -38,14 +38,11 @@ type
   { TdRelationQueryBuilder - Query builder for relations }
   TdRelationQueryBuilder = class(TdObject)
   public
-    class function BuildOneToOneQuery(const ATargetTable, AForeignKey: string;
-      const ALocalValue: Variant): string;
-    class function BuildOneToManyQuery(const ATargetTable, AForeignKey: string;
-      const ALocalValue: Variant): string;
-    class function BuildManyToOneQuery(const ATargetTable, ALocalKey: string;
-      const AForeignValue: Variant): string;
-    class function BuildManyToManyQuery(const ATargetTable, AMappingTable,
-      AForeignKey, ALocalKey: string; const ALocalValue: Variant): string;
+    class function BuildOneToOneQuery(const aTargetTable, aForeignKey: string; const aLocalValue: Variant): string;
+    class function BuildOneToManyQuery(const aTargetTable, aForeignKey: string; const aLocalValue: Variant): string;
+    class function BuildManyToOneQuery(const aTargetTable, aLocalKey: string; const aForeignValue: Variant): string;
+    class function BuildManyToManyQuery(const aTargetTable, aMappingTable, aForeignKey, aLocalKey: string;
+      const aLocalValue: Variant): string;
   end;
 
   { TdRelationFactory - Factory for creating related objects }
@@ -58,9 +55,9 @@ type
   { TdRelationValidator - Relation validator }
   TdRelationValidator = class(TdObject)
   public
-    class function ValidateRelation(ARelation: TdRelationInfo): Boolean;
-    class function ValidateEntity(AEntity: TObject): Boolean;
-    class function GetValidationErrors(ARelation: TdRelationInfo): TStringList;
+    class function ValidateRelation(aRelation: TdRelationInfo): Boolean;
+    class function ValidateEntity(aEntity: TObject): Boolean;
+    class function GetValidationErrors(aRelation: TdRelationInfo): TStringList;
   end;
 
   { TdAdvancedRelationalEntity - Extended version of the base class }
@@ -78,7 +75,7 @@ type
 
     // Extended relation management methods
     procedure ClearRelationCache(const ARelationName: string = '');
-    procedure PreloadRelation(const ARelationName: string);
+    procedure PreloadRelation(const {%H-}ARelationName: string);
     procedure SetAutoLoad(AValue: Boolean);
 
     // Checking relation status
@@ -91,7 +88,16 @@ type
 implementation
 
 uses
-  Variants, TypInfo;
+  Variants, TypInfo
+  ;
+
+function VariantToSQLValueWithOperator(aValue: Variant): String;
+begin
+  if VarIsNull(aValue) then
+    Result:='IS NULL'
+  else
+    Result:='= '+QuotedStr(VarToStr(aValue));
+end;
 
 { TdRelationCache }
 
@@ -112,33 +118,36 @@ end;
 
 procedure TdRelationCache.Store(const AKey: string; AValue: TObject);
 var
-  Index: Integer;
+  aIndex: Integer;
 begin
-  Index := FCache.IndexOf(AKey);
-  if Index >= 0 then
-    FCache.Objects[Index] := AValue
+  aIndex := FCache.IndexOf(AKey);
+  if aIndex >= 0 then
+  begin
+    FCache.Objects[aIndex].Free;  // vs mem leak? FCache owns its items
+    FCache.Objects[aIndex] := AValue;
+  end
   else
     FCache.AddObject(AKey, AValue);
 end;
 
 function TdRelationCache.Retrieve(const AKey: string): TObject;
 var
-  Index: Integer;
+  aIndex: Integer;
 begin
-  Index := FCache.IndexOf(AKey);
-  if Index >= 0 then
-    Result := FCache.Objects[Index]
+  aIndex := FCache.IndexOf(AKey);
+  if aIndex >= 0 then
+    Result := FCache.Objects[aIndex]
   else
     Result := nil;
 end;
 
 procedure TdRelationCache.Remove(const AKey: string);
 var
-  Index: Integer;
+  aIndex: Integer;
 begin
-  Index := FCache.IndexOf(AKey);
-  if Index >= 0 then
-    FCache.Delete(Index);
+  aIndex := FCache.IndexOf(AKey);
+  if aIndex >= 0 then
+    FCache.Delete(aIndex);
 end;
 
 procedure TdRelationCache.Clear;
@@ -153,44 +162,50 @@ end;
 
 { TdRelationQueryBuilder }
 
-class function TdRelationQueryBuilder.BuildOneToOneQuery(const ATargetTable,
-  AForeignKey: string; const ALocalValue: Variant): string;
+class function TdRelationQueryBuilder.BuildOneToOneQuery(const aTargetTable, aForeignKey: string;
+  const aLocalValue: Variant): string;
+var
+  aValue: String;
 begin
-  Result := Format('SELECT * FROM %s WHERE %s = %s',
-    [ATargetTable, AForeignKey, QuotedStr(VarToStr(ALocalValue))]);
+  aValue:=VariantToSQLValueWithOperator(aLocalValue);
+  Result:=Format('SELECT * FROM %s WHERE %s %s', [aTargetTable, aForeignKey, aValue]);
 end;
 
-class function TdRelationQueryBuilder.BuildOneToManyQuery(const ATargetTable,
-  AForeignKey: string; const ALocalValue: Variant): string;
+class function TdRelationQueryBuilder.BuildOneToManyQuery(const aTargetTable, aForeignKey: string;
+  const aLocalValue: Variant): string;
+var
+  aValue: String;
 begin
-  Result := Format('SELECT * FROM %s WHERE %s = %s ORDER BY id',
-    [ATargetTable, AForeignKey, QuotedStr(VarToStr(ALocalValue))]);
+  aValue:=VariantToSQLValueWithOperator(aLocalValue);
+  Result:=Format('SELECT * FROM %s WHERE %s %s ORDER BY id', [aTargetTable, aForeignKey, aValue]);
 end;
 
-class function TdRelationQueryBuilder.BuildManyToOneQuery(const ATargetTable,
-  ALocalKey: string; const AForeignValue: Variant): string;
+class function TdRelationQueryBuilder.BuildManyToOneQuery(const aTargetTable, aLocalKey: string;
+  const aForeignValue: Variant): string;
+var
+  aValue: String;
 begin
-  Result := Format('SELECT * FROM %s WHERE %s = %s',
-    [ATargetTable, ALocalKey, QuotedStr(VarToStr(AForeignValue))]);
+  aValue:=VariantToSQLValueWithOperator(aForeignValue);
+  Result:=Format('SELECT * FROM %s WHERE %s %s', [aTargetTable, aLocalKey, aValue]);
 end;
 
-class function TdRelationQueryBuilder.BuildManyToManyQuery(const ATargetTable,
-  AMappingTable, AForeignKey, ALocalKey: string; const ALocalValue: Variant): string;
+class function TdRelationQueryBuilder.BuildManyToManyQuery(const aTargetTable, aMappingTable, aForeignKey,
+  aLocalKey: string; const aLocalValue: Variant): string;
+var
+  aValue: String;
 begin
-  Result := Format(
-    'SELECT t.* FROM %s t ' +
-    'INNER JOIN %s m ON t.%s = m.%s_target ' +
-    'WHERE m.%s_local = %s ' +
-    'ORDER BY t.id',
-    [ATargetTable, AMappingTable, ALocalKey, AForeignKey,
-     ALocalKey, QuotedStr(VarToStr(ALocalValue))]);
+  aValue:=VariantToSQLValueWithOperator(aLocalValue);
+  Result:=Format(
+    'SELECT t.* FROM %s t INNER JOIN %s m ON t.%s = m.%s_target WHERE m.%s_local %s ORDER BY t.id',
+    [aTargetTable, aMappingTable, aLocalKey, aForeignKey, aLocalKey, aValue]
+  );
 end;
 
 { TdRelationFactory }
 
 class function TdRelationFactory.CreateEntity(AClass: TClass): TObject;
 begin
-  Result := AClass.Create;
+  Result:=AClass.Create;
 end;
 
 class function TdRelationFactory.CreateEntityList: TObjectList;
@@ -200,7 +215,7 @@ end;
 
 { TdRelationValidator }
 
-class function TdRelationValidator.ValidateRelation(ARelation: TdRelationInfo): Boolean;
+class function TdRelationValidator.ValidateRelation(aRelation: TdRelationInfo): Boolean;
 begin
   Result := True;
 
@@ -219,25 +234,25 @@ begin
     Result := False;
 end;
 
-class function TdRelationValidator.ValidateEntity(AEntity: TObject): Boolean;
+class function TdRelationValidator.ValidateEntity(aEntity: TObject): Boolean;
 begin
-  Result := (AEntity <> nil) and Supports(AEntity, IdRelationalEntity);
+  Result := (aEntity <> nil) and Supports(aEntity, IdRelationalEntity);
 end;
 
-class function TdRelationValidator.GetValidationErrors(ARelation: TdRelationInfo): TStringList;
+class function TdRelationValidator.GetValidationErrors(aRelation: TdRelationInfo): TStringList;
 begin
   Result := TStringList.Create;
 
-  if ARelation.PropertyName = '' then
+  if aRelation.PropertyName = '' then
     Result.Add('Property name is required');
 
-  if ARelation.ForeignKey = '' then
+  if aRelation.ForeignKey = '' then
     Result.Add('Foreign key is required');
 
-  if ARelation.TargetClass = nil then
+  if aRelation.TargetClass = nil then
     Result.Add('Target class is required');
 
-  if (ARelation.RelationType = rtManyToMany) and (ARelation.MappingTable = '') then
+  if (aRelation.RelationType = rtManyToMany) and (aRelation.MappingTable = '') then
     Result.Add('Mapping table is required for Many-to-Many relations');
 end;
 

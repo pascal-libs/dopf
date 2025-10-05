@@ -215,7 +215,10 @@ var
 begin
   Index := FRelationValues.IndexOf(APropertyName);
   if Index >= 0 then
+  begin
+    FRelationValues.Objects[Index].Free; //? Recheck. Frees old one before assigning
     FRelationValues.Objects[Index] := AValue
+  end
   else
     FRelationValues.AddObject(APropertyName, AValue);
 end;
@@ -601,7 +604,7 @@ end;
 
 function TdGRelationalEntityOpf.GetRelatedObjectList(const ARelationName: string): TObjectList;
 begin
-  GetRelatedObjectList(FEntity, ARelationName);
+  Result:=GetRelatedObjectList(FEntity, ARelationName);
 end;
 
 function TdGRelationalEntityOpf.GetRelatedObjectList(aEntity: T3; const ARelationName: string): TObjectList;

@@ -17,6 +17,7 @@ type
   private
     FRegistry: TStringList;
     class var FInstance: TdTableRegistry;
+    procedure Clear;
   public
     constructor Create;
     destructor Destroy; override;
@@ -25,8 +26,9 @@ type
     class procedure RegisterTable(AClass: TClass; const ATableName: string);
     class function GetTableName(AClass: TClass): string;
     class function IsRegistered(AClass: TClass): Boolean;
+    class procedure ClearRegistry;
 
-    procedure RegisterClass(AClass: TClass; const ATableName: string);
+    procedure RegisterClass(aClass: TClass; const aTableName: string);
     function GetTableForClass(AClass: TClass): string;
     function HasClass(AClass: TClass): Boolean;
   end;
@@ -39,6 +41,11 @@ function GetTableNameForClass(AClass: TClass): string;
 implementation
 
 { TdTableRegistry }
+
+procedure TdTableRegistry.Clear;
+begin
+  FreeAndNil(FInstance);
+end;
 
 constructor TdTableRegistry.Create;
 begin
@@ -69,8 +76,11 @@ end;
 class function TdTableRegistry.GetTableName(AClass: TClass): string;
 begin
   Result := Instance.GetTableForClass(AClass);
-  if Result = '' then
+  if Result.IsEmpty then
+  begin
     Result := LowerCase(AClass.ClassName); // fallback to class name
+    Result := Copy(Result, 2, Length(Result) - 1);
+  end;
 end;
 
 class function TdTableRegistry.IsRegistered(AClass: TClass): Boolean;
@@ -78,22 +88,26 @@ begin
   Result := Instance.HasClass(AClass);
 end;
 
-procedure TdTableRegistry.RegisterClass(AClass: TClass; const ATableName: string);
-var
-  Index: Integer;
+class procedure TdTableRegistry.ClearRegistry;
 begin
-  Index := FRegistry.IndexOf(AClass.ClassName);
-  if Index >= 0 then
-    FRegistry.ValueFromIndex[Index] := ATableName
-  else
-    FRegistry.Values[AClass.ClassName] := ATableName;
+  Instance.Clear;
+end;
+
+procedure TdTableRegistry.RegisterClass(aClass: TClass; const aTableName: string);
+var
+  aIndex: Integer;
+begin
+  aIndex := FRegistry.IndexOfName(AClass.ClassName);
+  if aIndex >= 0 then
+    FRegistry.Delete(aIndex);
+  FRegistry.Values[AClass.ClassName] := ATableName;
 end;
 
 function TdTableRegistry.GetTableForClass(AClass: TClass): string;
 var
   Index: Integer;
 begin
-  Index := FRegistry.IndexOf(AClass.ClassName);
+  Index := FRegistry.IndexOfName(AClass.ClassName);
   if Index >= 0 then
     Result := FRegistry.ValueFromIndex[Index]
   else
@@ -102,7 +116,7 @@ end;
 
 function TdTableRegistry.HasClass(AClass: TClass): Boolean;
 begin
-  Result := FRegistry.IndexOf(AClass.ClassName) >= 0;
+  Result := FRegistry.IndexOfName(AClass.ClassName) >= 0;
 end;
 
 { Global functions for convenience }

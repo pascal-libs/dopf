@@ -384,13 +384,13 @@ end;
 
 procedure TTestRelationQueryBuilder.TestBuildOneToOneQuery;
 var
-  Query: string;
+  aQuery: string;
 begin
-  Query := TdRelationQueryBuilder.BuildOneToOneQuery('profiles', 'person_id', 123);
-  AssertTrue('Should contain table name', Pos('profiles', Query) > 0);
-  AssertTrue('Should contain foreign key', Pos('person_id', Query) > 0);
-  AssertTrue('Should contain value', Pos('123', Query) > 0);
-  AssertTrue('Should contain WHERE clause', Pos('WHERE', Query) > 0);
+  aQuery := TdRelationQueryBuilder.BuildOneToOneQuery('profiles', 'person_id', 123);
+  AssertTrue('Should contain table name', Pos('profiles', aQuery) > 0);
+  AssertTrue('Should contain foreign key', Pos('person_id', aQuery) > 0);
+  AssertTrue('Should contain value', Pos('123', aQuery) > 0);
+  AssertTrue('Should contain WHERE clause', Pos('WHERE', aQuery) > 0);
 end;
 
 procedure TTestRelationQueryBuilder.TestBuildOneToManyQuery;
