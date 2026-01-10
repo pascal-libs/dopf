@@ -707,7 +707,7 @@ end;
 procedure TdGConnection.CheckBrokerClass;
 begin
   if not T1.InheritsFrom(TdConnectionBroker) then
-    raise EdConnection.CreateFmt('Invalid broker class: "%s".', [T1.ClassName]);
+    raise EdConnection.CreateFmt('Invalid broker class: "%s".', [ShortString(T1.ClassName)]);
 end;
 
 procedure TdGConnection.CheckBroker;
@@ -719,7 +719,7 @@ end;
 procedure TdGConnection.CheckLoggerClass;
 begin
   if not T2.InheritsFrom(TdLogger) then
-    raise EdConnection.CreateFmt('Invalid logger class: "%s".', [T2.ClassName]);
+    raise EdConnection.CreateFmt('Invalid logger class: "%s".', [ShortString(T2.ClassName)]);
 end;
 
 function TdGConnection.GetConnected: Boolean;
@@ -1297,7 +1297,7 @@ end;
 procedure TdGQuery.CheckBrokerClass;
 begin
   if not T1.InheritsFrom(TdQueryBroker) then
-    raise EdQuery.CreateFmt('Invalid broker class: "%s".', [T1.ClassName]);
+    raise EdQuery.CreateFmt('Invalid broker class: "%s".', [ShortString(T1.ClassName)]);
 end;
 
 procedure TdGQuery.CheckBroker;
