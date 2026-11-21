@@ -21,6 +21,8 @@ type
     procedure TestGQueryInvalidOwner;
     procedure TestApplyWithoutTransactionIgnored;
     procedure TestApplyStrictWithoutTransactionRaises;
+    procedure TestApplyStrictRequiresExplicitTransaction;
+    procedure TestApplyUpdatesStrictRequiresExplicitTransaction;
     procedure TestApplyWithTransactionCallsBroker;
     procedure TestExecuteStrictRequiresExplicitTransaction;
     procedure TestExplicitTransactionLifecycle;
@@ -298,6 +300,65 @@ begin
   end;
 end;
 
+procedure TTestDOpf.TestApplyStrictRequiresExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.Broker.InTx := True; // implicit transaction (a read auto-started it)
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.Apply;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+      AssertTrue(Q.Broker.ApplyCount = 0);
+      C.StartTransaction; // adopts the implicit transaction
+      Q.Apply;
+      AssertTrue(Q.Broker.ApplyCount = 1);
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestApplyUpdatesStrictRequiresExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.ApplyUpdates;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
 procedure TTestDOpf.TestApplyWithTransactionCallsBroker;
 var
   C: TMyQueryConnection;
@@ -443,6 +504,7 @@ begin
     AssertTrue(C.Broker.CommitCount = 0); // the owner commits
     AssertTrue(C.Broker.RollbackCount = 0);
     AssertTrue(C.InTransaction); // still open
+    AssertTrue(C.ExplicitTransaction); // the scope adopted it
   finally
     C.Free;
   end;

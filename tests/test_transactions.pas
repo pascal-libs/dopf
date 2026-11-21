@@ -33,7 +33,9 @@ type
     procedure TestApplyAfterAddCommitsAutoStartedTransaction;
     procedure TestApplyWithoutTransactionIgnored;
     procedure TestApplyStrictWithoutTransactionRaises;
+    procedure TestApplyStrictRequiresExplicitTransaction;
     procedure TestStrictWriteRequiresExplicitTransaction;
+    procedure TestStrictRunInTransactionAfterRead;
     procedure TestExplicitTransactionApplyCommits;
     procedure TestRunInTransactionCommits;
     procedure TestRunInTransactionRollsBack;
@@ -141,6 +143,35 @@ begin
   AssertRowCount(0);
 end;
 
+procedure TTestTransactions.TestApplyStrictRequiresExplicitTransaction;
+var
+  pers: TPersonOpf.TEntities;
+begin
+  FCon.StrictTransactions := True;
+  try
+    pers := TPersonOpf.TEntities.Create;
+    try
+      FOpf.List(pers); // a read auto-starts the implicit transaction
+    finally
+      pers.Free;
+    end;
+    AssertTrue(FCon.InTransaction);
+    AssertFalse(FCon.ExplicitTransaction);
+    try
+      FOpf.Apply; // may not commit an implicit transaction in strict mode
+      Fail('Expected exception');
+    except
+      on E: EdQuery do
+        AssertTrue(Pos('explicit transaction', E.Message) > 0);
+    end;
+    FCon.StartTransaction; // adopts the implicit transaction
+    FOpf.Apply;
+    AssertFalse(FCon.InTransaction);
+  finally
+    FCon.StrictTransactions := False;
+  end;
+end;
+
 procedure TTestTransactions.TestStrictWriteRequiresExplicitTransaction;
 begin
   FCon.StrictTransactions := True;
@@ -158,6 +189,29 @@ begin
     FCon.StartTransaction;
     FOpf.Entity.Name := 'Allowed';
     FOpf.Add;
+    FOpf.Apply;
+    AssertRowCount(1);
+  finally
+    FCon.StrictTransactions := False;
+  end;
+end;
+
+procedure TTestTransactions.TestStrictRunInTransactionAfterRead;
+var
+  pers: TPersonOpf.TEntities;
+begin
+  FCon.StrictTransactions := True;
+  try
+    pers := TPersonOpf.TEntities.Create;
+    try
+      FOpf.List(pers); // a read auto-starts the implicit transaction
+    finally
+      pers.Free;
+    end;
+    // joins the ambient transaction and takes responsibility for it
+    FCon.RunInTransaction(@AddPersonProc);
+    AssertTrue(FCon.InTransaction);
+    AssertTrue(FCon.ExplicitTransaction);
     FOpf.Apply;
     AssertRowCount(1);
   finally

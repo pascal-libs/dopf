@@ -280,7 +280,9 @@ type
     procedure CheckConnection; virtual;
     procedure CheckBrokerClass; virtual;
     procedure CheckBroker; virtual;
-    function CheckTransaction(const AMethod: string): Boolean; virtual;
+    function CheckTransaction(const AMethod: string;
+      ARequireExplicit: Boolean = False): Boolean; virtual;
+    procedure CheckExplicitTransaction(const AMethod: string); virtual;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -989,7 +991,12 @@ begin
   // stays open for its owner to commit.
   Joined := InTransaction;
   if Joined then
-    FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction (joined)')
+  begin
+    FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction (joined)');
+    // the scope takes responsibility for the ambient transaction, exactly
+    // like StartTransaction adopting it
+    FExplicitTransaction := True;
+  end
   else
   begin
     FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction');
@@ -1398,10 +1405,25 @@ begin
     raise EdQuery.Create('Connection not assigned.');
 end;
 
-function TdGQuery.CheckTransaction(const AMethod: string): Boolean;
+procedure TdGQuery.CheckExplicitTransaction(const AMethod: string);
+begin
+  if Connection.StrictTransactions and not Connection.ExplicitTransaction then
+    raise EdQuery.CreateFmt('"%s" requires an explicit transaction ' +
+      '(Connection.StrictTransactions is enabled). Use Connection.' +
+      'StartTransaction ... Apply or Connection.RunInTransaction.', [AMethod]);
+end;
+
+function TdGQuery.CheckTransaction(const AMethod: string;
+  ARequireExplicit: Boolean): Boolean;
 begin
   if Connection.InTransaction then
+  begin
+    // A read leaves the implicit transaction active; in strict mode the
+    // write-flushing methods may not commit it without an explicit unit.
+    if ARequireExplicit then
+      CheckExplicitTransaction(AMethod);
     Exit(True);
+  end;
   if Connection.StrictTransactions then
     raise EdQuery.CreateFmt(
       '"%s" requires an active transaction. Use Connection.StartTransaction ... %s ' +
@@ -1531,6 +1553,7 @@ procedure TdGQuery.ApplyUpdates;
 begin
   CheckBroker;
   CheckConnection;
+  CheckExplicitTransaction('Query.ApplyUpdates');
   Connection.Logger.Log(ltCustom, 'Trying Query.ApplyUpdates');
   try
     FBroker.ApplyUpdates;
@@ -1564,7 +1587,7 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Apply');
-  if not CheckTransaction('Query.Apply') then
+  if not CheckTransaction('Query.Apply', True) then
     Exit;
   try
     FBroker.Apply;
@@ -1582,7 +1605,7 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.ApplyRetaining');
-  if not CheckTransaction('Query.ApplyRetaining') then
+  if not CheckTransaction('Query.ApplyRetaining', True) then
     Exit;
   try
     FBroker.ApplyRetaining;
@@ -1765,10 +1788,7 @@ var
 begin
   CheckBroker;
   CheckConnection;
-  if Connection.StrictTransactions and not Connection.ExplicitTransaction then
-    raise EdQuery.Create('"Query.Execute" requires an explicit transaction ' +
-      '(Connection.StrictTransactions is enabled). Use Connection.' +
-      'StartTransaction ... Apply or Connection.RunInTransaction.');
+  CheckExplicitTransaction('Query.Execute');
   S := Trim(SQL.Text);
   dUtils.dParameterizeSQL(S, Params, Nulls);
   Connection.Logger.Log(ltSQL, 'Trying Query.Execute: ' + S);

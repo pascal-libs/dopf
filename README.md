@@ -196,8 +196,9 @@ transaction whether you opened one or not. Set
 con.StrictTransactions := True;
 ```
 
-to require an explicit transaction for every write (`Add`, `Modify`,
-`Remove`, `Query.Execute` raise `EdQuery` until you call `StartTransaction`
-or `RunInTransaction`), and to turn a commit without an active transaction
-into an `EdQuery` error as well. This is the intended contract; the default
-will change to `True` in dOPF 4.0.
+to require an explicit transaction for every write: `Add`, `Modify`,
+`Remove`, `Query.Execute` and the cached-update flushes `Query.Apply`,
+`Query.ApplyRetaining` and `Query.ApplyUpdates` raise `EdQuery` until you
+call `StartTransaction` or `RunInTransaction` (a commit without an active
+transaction becomes an `EdQuery` error as well). This is the intended
+contract; the default will change to `True` in dOPF 4.0.
