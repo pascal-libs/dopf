@@ -122,6 +122,7 @@ type
     FBroker: T1;
     FLogger: T2;
     FStrictTransactions: Boolean;
+    FExplicitTransaction: Boolean;
     function GetConnected: Boolean;
     function GetDatabase: string;
     function GetDriver: string;
@@ -130,6 +131,7 @@ type
     function GetPort: Integer;
     function GetUser: string;
     function GetConnectorType: string;
+    function GetExplicitTransaction: Boolean;
     procedure SetConnected(const AValue: Boolean);
     procedure SetDatabase(const AValue: string);
     procedure SetDriver(const AValue: string);
@@ -159,6 +161,8 @@ type
     property Connected: Boolean read GetConnected write SetConnected;
     property StrictTransactions: Boolean read FStrictTransactions
       write FStrictTransactions default False;
+    // True from StartTransaction/RunInTransaction until the transaction ends.
+    property ExplicitTransaction: Boolean read GetExplicitTransaction;
   published
     property Driver: string read GetDriver write SetDriver;
     property Database: string read GetDatabase write SetDatabase;
@@ -869,16 +873,29 @@ end;
 procedure TdGConnection.StartTransaction;
 begin
   CheckBroker;
-  FLogger.Log(ltTransaction, 'Trying Connection.StartTransaction');
-  try
-    FBroker.StartTransaction;
-  except
-    on E: Exception do
-    begin
-      FLogger.Log(ltErrors, E.Message);
-      raise;
+  if ExplicitTransaction then
+    raise EdConnection.Create(
+      'StartTransaction: a transaction is already active.');
+  if InTransaction then
+  begin
+    // SQLdb started the shared transaction implicitly (e.g. by a previous
+    // read); it holds no work of its own, so adopt it instead of failing.
+    FLogger.Log(ltTransaction, 'Connection.StartTransaction adopts the active transaction');
+  end
+  else
+  begin
+    FLogger.Log(ltTransaction, 'Trying Connection.StartTransaction');
+    try
+      FBroker.StartTransaction;
+    except
+      on E: Exception do
+      begin
+        FLogger.Log(ltErrors, E.Message);
+        raise;
+      end;
     end;
   end;
+  FExplicitTransaction := True;
 end;
 
 procedure TdGConnection.Commit;
@@ -894,6 +911,7 @@ begin
       raise;
     end;
   end;
+  FExplicitTransaction := False;
 end;
 
 procedure TdGConnection.CommitRetaining;
@@ -924,6 +942,7 @@ begin
       raise;
     end;
   end;
+  FExplicitTransaction := False;
 end;
 
 procedure TdGConnection.RollbackRetaining;
@@ -947,20 +966,39 @@ begin
   Result := FBroker.InTransaction;
 end;
 
+function TdGConnection.GetExplicitTransaction: Boolean;
+begin
+  // The transaction may have ended elsewhere (e.g. Query.Apply); drop the
+  // flag as soon as it is no longer active.
+  if FExplicitTransaction and not InTransaction then
+    FExplicitTransaction := False;
+  Result := FExplicitTransaction;
+end;
+
 procedure TdGConnection.RunInTransaction(AProc: TdTransactionProc);
+var
+  Joined: Boolean;
 begin
   CheckBroker;
   if not Assigned(AProc) then
     raise EdConnection.Create(
       'RunInTransaction: the procedure is not assigned.');
-  if InTransaction then
-    raise EdConnection.Create(
-      'RunInTransaction: a transaction is already active.');
-  FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction');
-  StartTransaction;
+  // SQLdb starts the shared transaction implicitly on the first statement,
+  // so an "already active" transaction is the normal case: join it instead
+  // of failing. On error the whole transaction is rolled back; on success it
+  // stays open for its owner to commit.
+  Joined := InTransaction;
+  if Joined then
+    FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction (joined)')
+  else
+  begin
+    FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction');
+    StartTransaction;
+  end;
   try
     AProc;
-    Commit;
+    if not Joined then
+      Commit;
   except
     on E: Exception do
     begin
@@ -1727,6 +1765,10 @@ var
 begin
   CheckBroker;
   CheckConnection;
+  if Connection.StrictTransactions and not Connection.ExplicitTransaction then
+    raise EdQuery.Create('"Query.Execute" requires an explicit transaction ' +
+      '(Connection.StrictTransactions is enabled). Use Connection.' +
+      'StartTransaction ... Apply or Connection.RunInTransaction.');
   S := Trim(SQL.Text);
   dUtils.dParameterizeSQL(S, Params, Nulls);
   Connection.Logger.Log(ltSQL, 'Trying Query.Execute: ' + S);
