@@ -133,16 +133,23 @@ end.
 
 ## Transactions
 
-dOPF never opens or commits a transaction on its own: the caller owns the
-transaction, and all queries of a connector share a single one.
+All queries of a connector share a single transaction, and with FPC SQLdb it
+is started implicitly by the first statement: read a row and the transaction
+is already open. `Add`, `Modify`, `Remove` and `Query.Execute` run their SQL
+immediately inside it, and `Apply` flushes the query's cached updates (if
+any) and commits. In effect that is an implicit unit of work ending at
+`Apply`/`Commit` — with two traps: a forgotten commit rolls the writes back
+when the connection closes, and `StartTransaction` after any statement finds
+the transaction already active.
 
-- `Add`, `Modify`, `Remove` and `Query.Execute` run their SQL immediately.
-  With FPC SQLdb the shared transaction is started implicitly by the first
-  statement and stays open until you commit or roll it back.
-- `Apply` flushes the query's cached updates (if any) and commits that active
-  transaction.
+dOPF makes the model explicit instead:
+
+- `StartTransaction` adopts an implicitly started transaction (only a
+  transaction you started yourself makes it raise `EdConnection`), so an
+  explicit unit of work can begin anywhere in the session.
 - The query-side transaction methods (`Apply`, `ApplyRetaining`, `Undo`,
-  `UndoRetaining`, `Commit`, `Rollback`) require an active transaction.
+  `UndoRetaining`, `Commit`, `Rollback`) require an active transaction; with
+  none active they are ignored with a logged warning (compatibility mode).
 
 An explicit unit of work:
 
@@ -172,20 +179,25 @@ begin
   opf.Modify;
 end;
 
-con.RunInTransaction(@SaveAll); // StartTransaction, SaveAll, Commit / Rollback
+con.RunInTransaction(@SaveAll); // atomic: Commit on success, Rollback on error
 ```
 
-`RunInTransaction` raises `EdConnection` when the callback is missing or when
-a transaction is already active (nesting is not supported).
+If a transaction is already active, `RunInTransaction` joins it: the callback
+runs inside it, an error rolls back the whole transaction, and on success the
+transaction is left open for its owner to commit. A missing callback raises
+`EdConnection`.
 
 ### StrictTransactions
 
-By default the query-side transaction methods are ignored with a logged
-warning when no transaction is active (compatibility mode). Set
+By default dOPF keeps the historical behavior: writes run inside the implicit
+transaction whether you opened one or not. Set
 
 ```pascal
 con.StrictTransactions := True;
 ```
 
-to turn them into an `EdQuery` error instead. This is the intended contract;
-the default will change to `True` in dOPF 4.0.
+to require an explicit transaction for every write (`Add`, `Modify`,
+`Remove`, `Query.Execute` raise `EdQuery` until you call `StartTransaction`
+or `RunInTransaction`), and to turn a commit without an active transaction
+into an `EdQuery` error as well. This is the intended contract; the default
+will change to `True` in dOPF 4.0.
