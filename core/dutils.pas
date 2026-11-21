@@ -61,9 +61,48 @@ var
   I: Integer;
 
   procedure Replace;
+  { Replaces ':Name' case-insensitively, but only on token boundaries: the
+    character following the parameter name must not be an identifier
+    character (letter, digit or underscore). }
+  var
+    T: string;
+    C: Char;
+    I, J, N, L: Integer;
+    Match: Boolean;
   begin
-    { TODO: use exactly replace instead of StringReplace. }
-    ASql := StringReplace(ASql, ':' + P.Name, V, [rfIgnoreCase]);
+    N := Length(P.Name);
+    L := Length(ASql);
+    I := 1;
+    T := '';
+    while I <= L do
+    begin
+      if (N > 0) and (ASql[I] = ':') and (I + N <= L) then
+      begin
+        Match := True;
+        for J := 1 to N do
+          if UpCase(ASql[I + J]) <> UpCase(P.Name[J]) then
+          begin
+            Match := False;
+            Break;
+          end;
+        if Match then
+        begin
+          if I + N < L then
+            C := ASql[I + N + 1]
+          else
+            C := ' ';
+          if not (C in ['A'..'Z', 'a'..'z', '0'..'9', '_']) then
+          begin
+            T += V;
+            I += N + 1;
+            Continue;
+          end;
+        end;
+      end;
+      T += ASql[I];
+      Inc(I);
+    end;
+    ASql := T;
   end;
 
 begin
