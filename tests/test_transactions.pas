@@ -33,9 +33,12 @@ type
     procedure TestApplyAfterAddCommitsAutoStartedTransaction;
     procedure TestApplyWithoutTransactionIgnored;
     procedure TestApplyStrictWithoutTransactionRaises;
+    procedure TestStrictWriteRequiresExplicitTransaction;
     procedure TestExplicitTransactionApplyCommits;
     procedure TestRunInTransactionCommits;
     procedure TestRunInTransactionRollsBack;
+    procedure TestRunInTransactionJoinsAmbientTransaction;
+    procedure TestRunInTransactionJoinRollsBackAmbient;
   end;
 
 implementation
@@ -123,9 +126,6 @@ end;
 
 procedure TTestTransactions.TestApplyStrictWithoutTransactionRaises;
 begin
-  FOpf.Entity.Name := 'AutoCommit';
-  FOpf.Add;
-  FCon.Commit; // leave no active transaction
   FCon.StrictTransactions := True;
   try
     try
@@ -138,8 +138,31 @@ begin
   finally
     FCon.StrictTransactions := False;
   end;
-  // Add already executed immediately; Apply only refused to commit nothing.
-  AssertRowCount(1);
+  AssertRowCount(0);
+end;
+
+procedure TTestTransactions.TestStrictWriteRequiresExplicitTransaction;
+begin
+  FCon.StrictTransactions := True;
+  try
+    try
+      FOpf.Entity.Name := 'Blocked';
+      FOpf.Add;
+      Fail('Expected exception');
+    except
+      on E: EdQuery do
+        AssertTrue(Pos('explicit transaction', E.Message) > 0);
+    end;
+    AssertRowCount(0);
+    // with an explicit transaction the same write works
+    FCon.StartTransaction;
+    FOpf.Entity.Name := 'Allowed';
+    FOpf.Add;
+    FOpf.Apply;
+    AssertRowCount(1);
+  finally
+    FCon.StrictTransactions := False;
+  end;
 end;
 
 procedure TTestTransactions.TestExplicitTransactionApplyCommits;
@@ -174,6 +197,31 @@ begin
       AssertTrue(E.Message = 'boom');
   end;
   AssertRowCount(0);
+end;
+
+procedure TTestTransactions.TestRunInTransactionJoinsAmbientTransaction;
+begin
+  FOpf.Entity.Name := 'ambient';
+  FOpf.Add; // auto-starts the shared transaction
+  FCon.RunInTransaction(@AddPersonProc); // joins it
+  AssertTrue(FCon.InTransaction); // still open for the owner
+  FOpf.Apply; // commits both writes
+  AssertRowCount(2);
+end;
+
+procedure TTestTransactions.TestRunInTransactionJoinRollsBackAmbient;
+begin
+  FOpf.Entity.Name := 'ambient';
+  FOpf.Add; // auto-starts the shared transaction
+  try
+    FCon.RunInTransaction(@AddPersonAndRaiseProc);
+    Fail('Expected exception');
+  except
+    on E: Exception do
+      AssertTrue(E.Message = 'boom');
+  end;
+  AssertFalse(FCon.InTransaction);
+  AssertRowCount(0); // the ambient write was rolled back too
 end;
 
 initialization
