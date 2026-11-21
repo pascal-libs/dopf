@@ -31,6 +31,8 @@ type
 
   TdOpfUpdateKind = (ukAdd, ukModify, ukRemove);
 
+  TdTransactionProc = procedure of object;
+
   TdLogType = (ltTransaction, ltSQL, ltConnection, ltErrors, ltCustom);
 
   TdLogFilter = set of TdLogType;
@@ -119,6 +121,7 @@ type
   private
     FBroker: T1;
     FLogger: T2;
+    FStrictTransactions: Boolean;
     function GetConnected: Boolean;
     function GetDatabase: string;
     function GetDriver: string;
@@ -150,9 +153,12 @@ type
     procedure Rollback;
     procedure RollbackRetaining;
     function InTransaction: Boolean;
+    procedure RunInTransaction(AProc: TdTransactionProc);
     property Broker: T1 read FBroker write FBroker;
     property Logger: T2 read FLogger write FLogger;
     property Connected: Boolean read GetConnected write SetConnected;
+    property StrictTransactions: Boolean read FStrictTransactions
+      write FStrictTransactions default False;
   published
     property Driver: string read GetDriver write SetDriver;
     property Database: string read GetDatabase write SetDatabase;
@@ -270,6 +276,7 @@ type
     procedure CheckConnection; virtual;
     procedure CheckBrokerClass; virtual;
     procedure CheckBroker; virtual;
+    function CheckTransaction(const AMethod: string): Boolean; virtual;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -940,6 +947,31 @@ begin
   Result := FBroker.InTransaction;
 end;
 
+procedure TdGConnection.RunInTransaction(AProc: TdTransactionProc);
+begin
+  CheckBroker;
+  if not Assigned(AProc) then
+    raise EdConnection.Create(
+      'RunInTransaction: the procedure is not assigned.');
+  if InTransaction then
+    raise EdConnection.Create(
+      'RunInTransaction: a transaction is already active.');
+  FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction');
+  StartTransaction;
+  try
+    AProc;
+    Commit;
+  except
+    on E: Exception do
+    begin
+      FLogger.Log(ltErrors, E.Message);
+      if InTransaction then
+        Rollback;
+      raise;
+    end;
+  end;
+end;
+
 { TdQueryBroker }
 
 constructor TdQueryBroker.Create;
@@ -1328,6 +1360,21 @@ begin
     raise EdQuery.Create('Connection not assigned.');
 end;
 
+function TdGQuery.CheckTransaction(const AMethod: string): Boolean;
+begin
+  if Connection.InTransaction then
+    Exit(True);
+  if Connection.StrictTransactions then
+    raise EdQuery.CreateFmt(
+      '"%s" requires an active transaction. Use Connection.StartTransaction ... %s ' +
+      'or Connection.RunInTransaction.', [AMethod, AMethod]);
+  Connection.Logger.Log(ltTransaction, Format(
+    'Warning: "%s" ignored: no active transaction. ' +
+    'Set Connection.StrictTransactions := True to turn this into an error.',
+    [AMethod]));
+  Result := False;
+end;
+
 function TdGQuery.GetActive: Boolean;
 begin
   CheckBroker;
@@ -1479,6 +1526,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Apply');
+  if not CheckTransaction('Query.Apply') then
+    Exit;
   try
     FBroker.Apply;
   except
@@ -1495,6 +1544,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.ApplyRetaining');
+  if not CheckTransaction('Query.ApplyRetaining') then
+    Exit;
   try
     FBroker.ApplyRetaining;
   except
@@ -1511,6 +1562,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Undo');
+  if not CheckTransaction('Query.Undo') then
+    Exit;
   try
     FBroker.Undo;
   except
@@ -1527,6 +1580,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.UndoRetaining');
+  if not CheckTransaction('Query.UndoRetaining') then
+    Exit;
   try
     FBroker.UndoRetaining;
   except
@@ -1543,6 +1598,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Commit');
+  if not CheckTransaction('Query.Commit') then
+    Exit;
   try
     FBroker.Commit;
   except
@@ -1559,6 +1616,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Rollback');
+  if not CheckTransaction('Query.Rollback') then
+    Exit;
   try
     FBroker.Rollback;
   except
