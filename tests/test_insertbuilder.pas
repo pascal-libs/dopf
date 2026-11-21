@@ -28,8 +28,9 @@ type
   TTestInsertBuilder = class(TTestCase)
   published
     procedure TestMakeFields;
-    procedure TestIgnoredFieldsGuards;
-    procedure TestNoFieldsGuards;
+    procedure TestIgnoredFieldsRejected;
+    procedure TestNoFieldsRejected;
+    procedure TestBuildRejectsEmptyFields;
   end;
 
 implementation
@@ -55,26 +56,41 @@ begin
   end;
 end;
 
-procedure TTestInsertBuilder.TestIgnoredFieldsGuards;
+procedure TTestInsertBuilder.TestIgnoredFieldsRejected;
 var
   table: TPersonTable;
   fields, params: string;
 begin
-  // All published properties are ignored: builders must produce empty
-  // strings instead of raising on negative SetLength.
+  // All published properties are ignored: there is nothing to select or
+  // write, so the builders must reject the configuration outright
+  // instead of assembling invalid SQL.
   table := TPersonTable.Create;
   try
     table.IgnoredFields.Add('Id');
     table.IgnoredFields.Add('Name');
-    specialize TdGSelectBuilder<TPersonTable>.MakeFields(table, fields, True);
-    AssertEquals('', fields);
-    specialize TdGInsertBuilder<TPersonTable>.MakeFields(table, fields, params, True);
-    AssertEquals('', fields);
-    AssertEquals('', params);
-    // PK conditions are kept even when the PK field is ignored.
-    specialize TdGUpdateBuilder<TPersonTable>.MakeFields(table, fields, params, True);
-    AssertEquals('', fields);
-    AssertEquals('id = :id', params);
+    try
+      specialize TdGSelectBuilder<TPersonTable>.MakeFields(table, fields, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+    try
+      specialize TdGInsertBuilder<TPersonTable>.MakeFields(table, fields, params, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+    try
+      specialize TdGUpdateBuilder<TPersonTable>.MakeFields(table, fields, params, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+    // PK conditions are kept even when the PK field is ignored, so the
+    // delete builder still has a usable condition list.
     specialize TdGDeleteBuilder<TPersonTable>.MakeParams(table, params, True);
     AssertEquals('id = :id', params);
   finally
@@ -82,29 +98,73 @@ begin
   end;
 end;
 
-procedure TTestInsertBuilder.TestNoFieldsGuards;
+procedure TTestInsertBuilder.TestNoFieldsRejected;
 var
   table: TPersonTable;
   fields, params: string;
 begin
-  // No primary keys and all fields ignored: every builder must produce
-  // empty strings without raising on negative SetLength.
+  // No primary keys and all fields ignored: every builder must reject
+  // the configuration instead of raising on negative SetLength.
   table := TPersonTable.Create;
   try
     table.PrimaryKeys.Clear;
     table.IgnoredFields.Add('Id');
     table.IgnoredFields.Add('Name');
-    specialize TdGSelectBuilder<TPersonTable>.MakeFields(table, fields, True);
-    AssertEquals('', fields);
-    specialize TdGInsertBuilder<TPersonTable>.MakeFields(table, fields, params, True);
-    AssertEquals('', fields);
-    AssertEquals('', params);
-    specialize TdGUpdateBuilder<TPersonTable>.MakeFields(table, fields, params, True);
-    AssertEquals('', fields);
-    AssertEquals('', params);
-    specialize TdGDeleteBuilder<TPersonTable>.MakeParams(table, params, True);
-    AssertEquals('', params);
+    try
+      specialize TdGSelectBuilder<TPersonTable>.MakeFields(table, fields, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+    try
+      specialize TdGInsertBuilder<TPersonTable>.MakeFields(table, fields, params, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+    try
+      specialize TdGUpdateBuilder<TPersonTable>.MakeFields(table, fields, params, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+    try
+      specialize TdGDeleteBuilder<TPersonTable>.MakeParams(table, params, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Condition list must not be empty.', E.Message);
+    end;
   finally
+    table.Free;
+  end;
+end;
+
+procedure TTestInsertBuilder.TestBuildRejectsEmptyFields;
+var
+  table: TPersonTable;
+  B: specialize TdGSelectBuilder<TPersonTable>;
+  sql: string;
+begin
+  // Build must never emit invalid SQL like 'SELECT  FROM person'.
+  table := TPersonTable.Create;
+  B := specialize TdGSelectBuilder<TPersonTable>.Create(nil);
+  try
+    table.IgnoredFields.Add('Id');
+    table.IgnoredFields.Add('Name');
+    B.SetTable(table);
+    try
+      B.Build(sql, True);
+      Fail('Expected exception');
+    except
+      on E: EdSqlBuilder do
+        AssertEquals('Field list must not be empty.', E.Message);
+    end;
+  finally
+    B.Free;
     table.Free;
   end;
 end;
