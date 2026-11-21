@@ -13,6 +13,9 @@ type
     procedure TestConnectionBrokerConnect;
     procedure TestGConnectionCreate;
     procedure TestLoggerActivateAfterFileName;
+    procedure TestGQueryNilOwner;
+    procedure TestGQueryOwnerConnection;
+    procedure TestGQueryInvalidOwner;
   end;
 
 implementation
@@ -23,6 +26,44 @@ uses
 
 type
   TMyConnection = class(specialize TdGConnection<TdConnectionBroker, TdLogger>);
+
+  { TMyConnBroker }
+
+  TMyConnBroker = class(TdConnectionBroker)
+  protected
+    function GetConnection: TObject; override;
+  end;
+
+  { TMyQueryBroker }
+
+  TMyQueryBroker = class(TdQueryBroker)
+  protected
+    function GetConnection: TObject; override;
+    procedure SetConnection(AValue: TObject); override;
+  end;
+
+  TMyQueryConnection = class(specialize TdGConnection<TMyConnBroker, TdLogger>);
+  TMyQuery = class(specialize TdGQuery<TMyQueryBroker, TMyQueryConnection>);
+
+var
+  GBrokerConnection: TObject;
+  GBrokerConnectionSet: Boolean;
+
+function TMyConnBroker.GetConnection: TObject;
+begin
+  Result := Self;
+end;
+
+function TMyQueryBroker.GetConnection: TObject;
+begin
+  Result := GBrokerConnection;
+end;
+
+procedure TMyQueryBroker.SetConnection(AValue: TObject);
+begin
+  GBrokerConnection := AValue;
+  GBrokerConnectionSet := True;
+end;
 
 procedure TTestDOpf.TestConnectionBrokerConnect;
 var
@@ -83,6 +124,64 @@ begin
   finally
     SL.Free;
     DeleteFile(Path);
+  end;
+end;
+
+procedure TTestDOpf.TestGQueryNilOwner;
+var
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  Q := TMyQuery.Create(nil);
+  try
+    AssertTrue(Assigned(Q.Broker));
+    AssertTrue(Q.Connection = nil);
+    AssertFalse(GBrokerConnectionSet);
+  finally
+    Q.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestGQueryOwnerConnection;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    Q := TMyQuery.Create(C);
+    try
+      AssertTrue(Q.Connection = C);
+      AssertTrue(GBrokerConnectionSet);
+      AssertTrue(GBrokerConnection = C.Broker);
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestGQueryInvalidOwner;
+var
+  O: TComponent;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  O := TComponent.Create(nil);
+  try
+    try
+      TMyQuery.Create(O);
+      Fail('Expected exception');
+    except
+      on E: EdQuery do
+        AssertTrue(Pos('Invalid owner class', E.Message) > 0);
+    end;
+  finally
+    O.Free;
   end;
 end;
 

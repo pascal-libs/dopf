@@ -1237,10 +1237,15 @@ constructor TdGQuery.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   CheckBrokerClass;
+  if (AOwner <> nil) and not AOwner.ClassType.InheritsFrom(T2) then
+    raise EdQuery.CreateFmt('Invalid owner class: "%s".',
+      [ShortString(AOwner.ClassName)]);
   FBroker := T1.Create;
-  FConnection := T2(AOwner);
-  if Assigned(AOwner) then
+  if AOwner <> nil then
+  begin
+    FConnection := T2(AOwner);
     FBroker.Connection := FConnection.Broker.Connection;
+  end;
 end;
 
 destructor TdGQuery.Destroy;
