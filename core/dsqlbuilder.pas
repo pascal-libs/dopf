@@ -183,7 +183,8 @@ begin
       Continue;
     AFields += AFieldQuote + N + AFieldQuote + ', ';
   end;
-  SetLength(AFields, Length(AFields) - 2);
+  if AFields <> '' then
+    SetLength(AFields, Length(AFields) - 2);
   AFields := LowerCase(AFields);
 end;
 
@@ -222,8 +223,10 @@ begin
     AFields += AFieldQuote + N + AFieldQuote + ', ';
     AParams += ':' + N + ', ';
   end;
-  SetLength(AFields, Length(AFields) - 2);
-  SetLength(AParams, Length(AParams) - 2);
+  if AFields <> '' then
+    SetLength(AFields, Length(AFields) - 2);
+  if AParams <> '' then
+    SetLength(AParams, Length(AParams) - 2);
   AFields := LowerCase(AFields);
   AParams := LowerCase(AParams);
 end;
@@ -271,9 +274,11 @@ begin
       Continue;
     AFields += AFieldQuote + N + AFieldQuote + ' = :' + N + ', '
   end;
-  SetLength(AFields, Length(AFields) - 2);
+  if AFields <> '' then
+    SetLength(AFields, Length(AFields) - 2);
   AFields := LowerCase(AFields);
-  SetLength(AParams, Length(AParams) - 5);
+  if AParams <> '' then
+    SetLength(AParams, Length(AParams) - 5);
   AParams := LowerCase(AParams);
 end;
 
@@ -320,7 +325,8 @@ begin
         AParams += AFieldQuote + N + AFieldQuote + ' = :' + N + ' AND ';
     end;
   end;
-  SetLength(AParams, Length(AParams) - 5);
+  if AParams <> '' then
+    SetLength(AParams, Length(AParams) - 5);
   AParams := LowerCase(AParams);
 end;
 
