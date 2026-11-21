@@ -38,3 +38,8 @@ lib/
 # Application bundle for Mac OS
 *.app/
 *.conf
+
+# Local working files (never commit)
+.zcode/
+AGENTS.md
+ROADMAP.md

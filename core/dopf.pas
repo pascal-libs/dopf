@@ -48,6 +48,7 @@ type
     FOnLogging: TdLoggingEvent;
     FOverwrite: Boolean;
     FStream: TFileStream;
+    procedure OpenStream;
     procedure SetActive(AValue: Boolean);
     procedure SetFileName(AValue: TFileName);
   protected
@@ -476,28 +477,36 @@ begin
   inherited Destroy;
 end;
 
-procedure TdLogger.SetFileName(AValue: TFileName);
+procedure TdLogger.OpenStream;
 var
   D: string;
   F: TFileName;
 begin
-  if FActive and (Trim(AValue) <> '') and (AValue <> FFileName) then
+  FreeAndNil(FStream);
+  if Trim(FFileName) = '' then
+    Exit;
+  if FDirectory <> '' then
+    D := IncludeTrailingPathDelimiter(FDirectory)
+  else
+    D := '';
+  F := D + ChangeFileExt(FFileName, '_' + FormatDateTime('yyyymmdd', Date) +
+    ExtractFileExt(FFileName));
+  if (not FOverwrite) and FileExists(F) then
+  begin
+    FStream := TFileStream.Create(F, fmOpenReadWrite);
+    FStream.Seek(FStream.Size, soBeginning);
+  end
+  else
+    FStream := TFileStream.Create(F, fmCreate);
+end;
+
+procedure TdLogger.SetFileName(AValue: TFileName);
+begin
+  if (Trim(AValue) <> '') and (AValue <> FFileName) then
   begin
     FFileName := AValue;
-    FreeAndNil(FStream);
-    if FDirectory <> '' then
-      D := IncludeTrailingPathDelimiter(FDirectory)
-    else
-      D := '';
-    F := D + ChangeFileExt(FFileName, '_' + FormatDateTime('yyyymmdd', Date) +
-      ExtractFileExt(FFileName));
-    if (not FOverwrite) and FileExists(F) then
-    begin
-      FStream := TFileStream.Create(F, fmOpenReadWrite);
-      FStream.Seek(FStream.Size, soBeginning);
-    end
-    else
-      FStream := TFileStream.Create(F, fmCreate);
+    if FActive then
+      OpenStream;
   end;
 end;
 
@@ -506,7 +515,9 @@ begin
   if AValue <> FActive then
   begin
     FActive := AValue;
-    if not FActive then
+    if FActive then
+      OpenStream
+    else
       FreeAndNil(FStream);
   end;
 end;
@@ -1226,10 +1237,15 @@ constructor TdGQuery.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   CheckBrokerClass;
+  if (AOwner <> nil) and not AOwner.ClassType.InheritsFrom(T2) then
+    raise EdQuery.CreateFmt('Invalid owner class: "%s".',
+      [ShortString(AOwner.ClassName)]);
   FBroker := T1.Create;
-  FConnection := T2(AOwner);
-  if Assigned(AOwner) then
+  if AOwner <> nil then
+  begin
+    FConnection := T2(AOwner);
     FBroker.Connection := FConnection.Broker.Connection;
+  end;
 end;
 
 destructor TdGQuery.Destroy;
@@ -1842,7 +1858,7 @@ begin
   if not Assigned(AEntity) then
     raise EdOpf.Create('Entity must not be nil.');
   if T3 = TObject then
-    raise EdOpf.Create('Entity must be TObject directly.');
+    raise EdOpf.Create('Entity must not be TObject directly.');
 end;
 
 procedure TdGOpf.CheckEntities(AEntities: TEntities);

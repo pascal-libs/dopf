@@ -183,8 +183,11 @@ begin
       Continue;
     AFields += AFieldQuote + N + AFieldQuote + ', ';
   end;
-  SetLength(AFields, Length(AFields) - 2);
+  if AFields <> '' then
+    SetLength(AFields, Length(AFields) - 2);
   AFields := LowerCase(AFields);
+  if AFields = '' then
+    raise EdSqlBuilder.Create('Field list must not be empty.');
 end;
 
 procedure TdGSelectBuilder.Build(out ASql: string; const AIgnoreWildcard: Boolean;
@@ -222,10 +225,15 @@ begin
     AFields += AFieldQuote + N + AFieldQuote + ', ';
     AParams += ':' + N + ', ';
   end;
-  SetLength(AFields, Length(AFields) - 2);
-  SetLength(AParams, Length(AParams) - 2);
+  if AFields <> '' then
+    SetLength(AFields, Length(AFields) - 2);
+  if AParams <> '' then
+    SetLength(AParams, Length(AParams) - 2);
   AFields := LowerCase(AFields);
   AParams := LowerCase(AParams);
+  // AParams is built in lockstep with AFields: one check covers both.
+  if AFields = '' then
+    raise EdSqlBuilder.Create('Field list must not be empty.');
 end;
 
 procedure TdGInsertBuilder.Build(out ASql: string; const AIgnorePrimaryKeys: Boolean;
@@ -271,10 +279,16 @@ begin
       Continue;
     AFields += AFieldQuote + N + AFieldQuote + ' = :' + N + ', '
   end;
-  SetLength(AFields, Length(AFields) - 2);
+  if AFields <> '' then
+    SetLength(AFields, Length(AFields) - 2);
   AFields := LowerCase(AFields);
-  SetLength(AParams, Length(AParams) - 5);
+  if AParams <> '' then
+    SetLength(AParams, Length(AParams) - 5);
   AParams := LowerCase(AParams);
+  if AFields = '' then
+    raise EdSqlBuilder.Create('Field list must not be empty.');
+  if AParams = '' then
+    raise EdSqlBuilder.Create('Condition list must not be empty.');
 end;
 
 procedure TdGUpdateBuilder.Build(out ASql: string; const AIgnorePrimaryKeys: Boolean;
@@ -320,8 +334,11 @@ begin
         AParams += AFieldQuote + N + AFieldQuote + ' = :' + N + ' AND ';
     end;
   end;
-  SetLength(AParams, Length(AParams) - 5);
+  if AParams <> '' then
+    SetLength(AParams, Length(AParams) - 5);
   AParams := LowerCase(AParams);
+  if AParams = '' then
+    raise EdSqlBuilder.Create('Condition list must not be empty.');
 end;
 
 procedure TdGDeleteBuilder.Build(out ASql: string; const AIgnoreProperties: Boolean;
