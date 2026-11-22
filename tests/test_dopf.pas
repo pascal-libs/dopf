@@ -29,6 +29,7 @@ type
     procedure TestExecuteStrictRequiresExplicitTransaction;
     procedure TestExplicitTransactionLifecycle;
     procedure TestStartTransactionAdoptsAmbient;
+    procedure TestCommitIfActive;
     procedure TestRunInTransactionCommits;
     procedure TestRunInTransactionRollsBackOnException;
     procedure TestRunInTransactionJoinsActiveTransaction;
@@ -549,6 +550,23 @@ begin
     end;
     C.Rollback;
     AssertFalse(C.ExplicitTransaction);
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestCommitIfActive;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.CommitIfActive; // no transaction: a no-op, no exception
+    AssertTrue(C.Broker.CommitCount = 0);
+    C.Broker.InTx := True;
+    C.CommitIfActive;
+    AssertTrue(C.Broker.CommitCount = 1);
+    AssertFalse(C.InTransaction);
   finally
     C.Free;
   end;

@@ -44,6 +44,7 @@ type
     procedure TestRunInTransactionRollsBack;
     procedure TestRunInTransactionJoinsAmbientTransaction;
     procedure TestRunInTransactionJoinRollsBackAmbient;
+    procedure TestCommitIfActiveClosesReadTransaction;
   end;
 
 implementation
@@ -427,6 +428,22 @@ begin
   end;
   AssertFalse(FCon.InTransaction);
   AssertRowCount(0); // the ambient write was rolled back too
+end;
+
+procedure TTestTransactions.TestCommitIfActiveClosesReadTransaction;
+var
+  pers: TPersonOpf.TEntities;
+begin
+  pers := TPersonOpf.TEntities.Create;
+  try
+    FOpf.List(pers); // the read auto-starts the shared transaction
+  finally
+    pers.Free;
+  end;
+  AssertTrue(FCon.InTransaction);
+  FCon.CommitIfActive; // closes it, no-op when there is none
+  FCon.CommitIfActive;
+  AssertFalse(FCon.InTransaction);
 end;
 
 initialization

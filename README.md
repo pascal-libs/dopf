@@ -81,6 +81,16 @@ begin
   try
     con.StartTransaction;
     try
+      WriteLn('Empty table');
+      opf.Empty;
+      WriteLn('Done.');
+
+      WriteLn('Add Waldir');
+      opf.Entity.Id := 1001;
+      opf.Entity.Name := 'Waldir';
+      opf.Add(False);
+      WriteLn('Done.');
+
       WriteLn('Add Anonymous');
       opf.Entity.Id := 1000;
       opf.Entity.Name := 'Anonymous';
@@ -106,8 +116,10 @@ begin
 
     WriteLn('Get Waldir Paim');
     opf.Entity.Id := 1001;
-    opf.Get;
-    WriteLn(opf.Entity.Id, ', ', opf.Entity.Name);
+    if opf.Get then
+      WriteLn(opf.Entity.Id, ', ', opf.Entity.Name)
+    else
+      WriteLn('Not found.');
     WriteLn('Done.');
     
     WriteLn('Search for names containing "a" (order by id DESC)');
@@ -150,6 +162,8 @@ dOPF makes the model explicit instead:
 - The query-side transaction methods (`Apply`, `ApplyRetaining`, `Undo`,
   `UndoRetaining`, `Commit`, `Rollback`) require an active transaction; with
   none active they are ignored with a logged warning (compatibility mode).
+- `Connection.CommitIfActive` closes the implicit transaction a read may
+  have started; it is a no-op when none is active.
 
 An explicit unit of work:
 
