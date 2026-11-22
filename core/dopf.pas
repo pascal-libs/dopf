@@ -1469,9 +1469,11 @@ begin
     else
       Break;
   end;
-  // take the leading verb: it may be followed by any SQL whitespace or '('
+  // take the leading verb: it may be followed by any SQL whitespace, '('
+  // or an inline comment marker (PostgreSQL treats comments as whitespace)
   I := 1;
-  while (I <= Length(S)) and not (S[I] in [' ', #9, #10, #13, '(']) do
+  while (I <= Length(S)) and not (S[I] in [' ', #9, #10, #13, '(',
+    '-', '#', '/']) do
     Inc(I);
   V := Copy(S, 1, I - 1);
   for I := Low(WriteVerbs) to High(WriteVerbs) do

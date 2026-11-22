@@ -290,6 +290,15 @@ begin
         on E: EdQuery do
           AssertTrue(Pos('write statement', E.Message) > 0);
       end;
+      Qy.SQL.Text := 'insert/* note */ into person (name) ' +
+        'values (''Blocked'')'; // inline comment right after the verb
+      try
+        Qy.Open;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('write statement', E.Message) > 0);
+      end;
     finally
       Qy.Free;
     end;
