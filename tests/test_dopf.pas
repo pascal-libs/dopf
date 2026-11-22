@@ -24,6 +24,7 @@ type
     procedure TestApplyStrictRequiresExplicitTransaction;
     procedure TestApplyUpdatesStrictRequiresExplicitTransaction;
     procedure TestPostDeleteStrictRequireExplicitTransaction;
+    procedure TestPostDeleteWithoutConnection;
     procedure TestApplyWithTransactionCallsBroker;
     procedure TestExecuteStrictRequiresExplicitTransaction;
     procedure TestExplicitTransactionLifecycle;
@@ -391,6 +392,32 @@ begin
     end;
   finally
     C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestPostDeleteWithoutConnection;
+var
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  Q := TMyQuery.Create(nil);
+  try
+    // no access violation from the strict-mode guard without a connection
+    try
+      Q.Post;
+      Fail('Expected exception');
+    except
+      on E: EdNotImplemented do ;
+    end;
+    try
+      Q.Delete;
+      Fail('Expected exception');
+    except
+      on E: EdNotImplemented do ;
+    end;
+  finally
+    Q.Free;
   end;
 end;
 

@@ -264,6 +264,23 @@ begin
         on E: EdQuery do
           AssertTrue(Pos('write statement', E.Message) > 0);
       end;
+      Qy.SQL.Text := '-- report query' + LineEnding +
+        'insert into person (name) values (''Blocked'')'; // line comment
+      try
+        Qy.Open;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('write statement', E.Message) > 0);
+      end;
+      Qy.SQL.Text := '/* nightly */ update person set name = ''X'''; // block comment
+      try
+        Qy.Active := True;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('write statement', E.Message) > 0);
+      end;
     finally
       Qy.Free;
     end;

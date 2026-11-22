@@ -1408,10 +1408,13 @@ end;
 
 procedure TdGQuery.CheckExplicitTransaction(const AMethod: string);
 begin
-  if Connection.StrictTransactions and not Connection.ExplicitTransaction then
-    raise EdQuery.CreateFmt('"%s" requires an explicit transaction ' +
-      '(Connection.StrictTransactions is enabled). Use Connection.' +
-      'StartTransaction ... Apply or Connection.RunInTransaction.', [AMethod]);
+  // a query without an owner has no strict mode to enforce
+  if (Connection = nil) or not Connection.StrictTransactions or
+    Connection.ExplicitTransaction then
+    Exit;
+  raise EdQuery.CreateFmt('"%s" requires an explicit transaction ' +
+    '(Connection.StrictTransactions is enabled). Use Connection.' +
+    'StartTransaction ... Apply or Connection.RunInTransaction.', [AMethod]);
 end;
 
 procedure TdGQuery.CheckReadonlyStatement(const AMethod: string);
@@ -1429,8 +1432,29 @@ begin
     Exit;
   // SQLdb can open statements that return rows, and some of them write
   // (e.g. PostgreSQL "insert ... returning"); there is no full SQL parser
-  // here, the leading verb decides.
+  // here, leading comments are skipped and the leading verb decides.
   S := LowerCase(Trim(SQL.Text));
+  while True do
+  begin
+    if Copy(S, 1, 2) = '--' then
+      I := Pos(#10, S)
+    else if Copy(S, 1, 1) = '#' then
+      I := Pos(#10, S)
+    else if Copy(S, 1, 2) = '/*' then
+    begin
+      I := Pos('*/', S);
+      if I > 0 then
+        I := I + 1; // skip past the closing marker
+    end
+    else
+      Break;
+    if I = 0 then
+    begin
+      S := '';
+      Break;
+    end;
+    S := Trim(Copy(S, I + 1, MaxInt));
+  end;
   // take the leading verb: it may be followed by any SQL whitespace or '('
   I := 1;
   while (I <= Length(S)) and not (S[I] in [' ', #9, #10, #13, '(']) do
