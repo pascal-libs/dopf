@@ -153,6 +153,20 @@ type
 
 implementation
 
+var
+  // fcl-db loads, initialises and releases the client library of a driver
+  // (e.g. libmysqlclient) through unsynchronised process-global state: in
+  // FPC 3.2.2 TryInitialiseMysql raises the reference count before the
+  // function-pointer table is filled and before mysql_library_init runs,
+  // while DoReleaseMysql at count zero calls mysql_library_end + dlclose
+  // under the feet of threads still calling through those pointers. Two
+  // connectors of one process switching Connected in parallel (a real
+  // production incident: an AccessViolation with the instruction pointer
+  // in anonymous memory while two threads connected to MySQL at once) can
+  // therefore corrupt memory, so every connection transition of this
+  // broker is serialised process-wide.
+  ConnectionLock: TRTLCriticalSection;
+
 { TdSQLdbConnectionBroker }
 
 constructor TdSQLdbConnectionBroker.Create;
@@ -160,6 +174,12 @@ begin
   inherited Create;
   FCon := TSQLConnector.Create(nil);
   FCon.Transaction := TSQLTransaction.Create(FCon);
+  // Keep the physical link open when the last transaction ends. Without
+  // it fcl-db closes the connection on the final commit/rollback and
+  // MaybeConnect reopens it on the next statement, so every recreation
+  // cycles the unsynchronised client library load/init/unload described
+  // above; with it the cycle disappears for the whole connection life.
+  FCon.KeepConnection := True;
 end;
 
 destructor TdSQLdbConnectionBroker.Destroy;
@@ -170,12 +190,24 @@ end;
 
 procedure TdSQLdbConnectionBroker.Connect;
 begin
-  FCon.Connected := True;
+  // both directions of the transition run the client library
+  // load/init/unload machinery, hence the process-wide lock
+  EnterCriticalSection(ConnectionLock);
+  try
+    FCon.Connected := True;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
 end;
 
 procedure TdSQLdbConnectionBroker.Disconnect;
 begin
-  FCon.Connected := False;
+  EnterCriticalSection(ConnectionLock);
+  try
+    FCon.Connected := False;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
 end;
 
 procedure TdSQLdbConnectionBroker.StartTransaction;
@@ -260,7 +292,14 @@ end;
 
 procedure TdSQLdbConnectionBroker.SetConnected(const AValue: Boolean);
 begin
-  FCon.Connected := AValue;
+  // the Connected property is the other entry point to the same
+  // transition as Connect/Disconnect and needs the same serialisation
+  EnterCriticalSection(ConnectionLock);
+  try
+    FCon.Connected := AValue;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
 end;
 
 procedure TdSQLdbConnectionBroker.SetDatabase(const AValue: string);
@@ -616,6 +655,12 @@ procedure TdSQLdbQueryBroker.GotoBookmark(ABookmark: TBookmark);
 begin
   FQuery.GotoBookmark(ABookmark);
 end;
+
+initialization
+  InitCriticalSection(ConnectionLock);
+
+finalization
+  DoneCriticalSection(ConnectionLock);
 
 end.
 
