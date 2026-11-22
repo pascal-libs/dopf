@@ -9,6 +9,9 @@ uses
 
 type
   TTestDOpf = class(TTestCase)
+  public
+    procedure NoopProc;
+    procedure RaisingProc;
   published
     procedure TestConnectionBrokerConnect;
     procedure TestGConnectionCreate;
@@ -16,6 +19,21 @@ type
     procedure TestGQueryNilOwner;
     procedure TestGQueryOwnerConnection;
     procedure TestGQueryInvalidOwner;
+    procedure TestApplyWithoutTransactionIgnored;
+    procedure TestApplyStrictWithoutTransactionRaises;
+    procedure TestApplyStrictRequiresExplicitTransaction;
+    procedure TestApplyUpdatesStrictRequiresExplicitTransaction;
+    procedure TestPostDeleteStrictRequireExplicitTransaction;
+    procedure TestPostDeleteWithoutConnection;
+    procedure TestApplyWithTransactionCallsBroker;
+    procedure TestExecuteStrictRequiresExplicitTransaction;
+    procedure TestExplicitTransactionLifecycle;
+    procedure TestStartTransactionAdoptsAmbient;
+    procedure TestRunInTransactionCommits;
+    procedure TestRunInTransactionRollsBackOnException;
+    procedure TestRunInTransactionJoinsActiveTransaction;
+    procedure TestRunInTransactionJoinRollsBackOnException;
+    procedure TestRunInTransactionRequiresProc;
   end;
 
 implementation
@@ -30,6 +48,15 @@ type
   { TMyConnBroker }
 
   TMyConnBroker = class(TdConnectionBroker)
+  public
+    InTx: Boolean;
+    StartCount: Integer;
+    CommitCount: Integer;
+    RollbackCount: Integer;
+    procedure StartTransaction; override;
+    procedure Commit; override;
+    procedure Rollback; override;
+    function InTransaction: Boolean; override;
   protected
     function GetConnection: TObject; override;
   end;
@@ -37,6 +64,9 @@ type
   { TMyQueryBroker }
 
   TMyQueryBroker = class(TdQueryBroker)
+  public
+    ApplyCount: Integer;
+    procedure Apply; override;
   protected
     function GetConnection: TObject; override;
     procedure SetConnection(AValue: TObject); override;
@@ -54,6 +84,29 @@ begin
   Result := Self;
 end;
 
+procedure TMyConnBroker.StartTransaction;
+begin
+  Inc(StartCount);
+  InTx := True;
+end;
+
+procedure TMyConnBroker.Commit;
+begin
+  Inc(CommitCount);
+  InTx := False;
+end;
+
+procedure TMyConnBroker.Rollback;
+begin
+  Inc(RollbackCount);
+  InTx := False;
+end;
+
+function TMyConnBroker.InTransaction: Boolean;
+begin
+  Result := InTx;
+end;
+
 function TMyQueryBroker.GetConnection: TObject;
 begin
   Result := GBrokerConnection;
@@ -63,6 +116,11 @@ procedure TMyQueryBroker.SetConnection(AValue: TObject);
 begin
   GBrokerConnection := AValue;
   GBrokerConnectionSet := True;
+end;
+
+procedure TMyQueryBroker.Apply;
+begin
+  Inc(ApplyCount);
 end;
 
 procedure TTestDOpf.TestConnectionBrokerConnect;
@@ -182,6 +240,376 @@ begin
     end;
   finally
     O.Free;
+  end;
+end;
+
+procedure TTestDOpf.NoopProc;
+begin
+end;
+
+procedure TTestDOpf.RaisingProc;
+begin
+  raise Exception.Create('boom');
+end;
+
+procedure TTestDOpf.TestApplyWithoutTransactionIgnored;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    Q := TMyQuery.Create(C);
+    try
+      AssertFalse(C.InTransaction);
+      Q.Apply; // compatibility mode: ignored, no exception
+      AssertTrue(Q.Broker.ApplyCount = 0);
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestApplyStrictWithoutTransactionRaises;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.Apply;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('requires an active transaction', E.Message) > 0);
+      end;
+      AssertTrue(Q.Broker.ApplyCount = 0);
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestApplyStrictRequiresExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.Broker.InTx := True; // implicit transaction (a read auto-started it)
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.Apply;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+      AssertTrue(Q.Broker.ApplyCount = 0);
+      C.StartTransaction; // adopts the implicit transaction
+      Q.Apply;
+      AssertTrue(Q.Broker.ApplyCount = 1);
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestApplyUpdatesStrictRequiresExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.ApplyUpdates;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestPostDeleteStrictRequireExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.Post;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+      try
+        Q.Delete;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestPostDeleteWithoutConnection;
+var
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  Q := TMyQuery.Create(nil);
+  try
+    // no access violation from the strict-mode guard without a connection
+    try
+      Q.Post;
+      Fail('Expected exception');
+    except
+      on E: EdNotImplemented do ;
+    end;
+    try
+      Q.Delete;
+      Fail('Expected exception');
+    except
+      on E: EdNotImplemented do ;
+    end;
+  finally
+    Q.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestApplyWithTransactionCallsBroker;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.Broker.InTx := True;
+    Q := TMyQuery.Create(C);
+    try
+      Q.Apply;
+      AssertTrue(Q.Broker.ApplyCount = 1);
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestRunInTransactionCommits;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.RunInTransaction(@NoopProc);
+    AssertTrue(C.Broker.StartCount = 1);
+    AssertTrue(C.Broker.CommitCount = 1);
+    AssertTrue(C.Broker.RollbackCount = 0);
+    AssertFalse(C.InTransaction);
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestRunInTransactionRollsBackOnException;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    try
+      C.RunInTransaction(@RaisingProc);
+      Fail('Expected exception');
+    except
+      on E: Exception do
+        AssertTrue(E.Message = 'boom');
+    end;
+    AssertTrue(C.Broker.StartCount = 1);
+    AssertTrue(C.Broker.RollbackCount = 1);
+    AssertTrue(C.Broker.CommitCount = 0);
+    AssertFalse(C.InTransaction);
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestExecuteStrictRequiresExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.Execute;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestExplicitTransactionLifecycle;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    AssertFalse(C.ExplicitTransaction);
+    C.StartTransaction;
+    AssertTrue(C.ExplicitTransaction);
+    // the transaction may end elsewhere (e.g. Query.Apply): the flag follows
+    C.Broker.InTx := False;
+    AssertFalse(C.ExplicitTransaction);
+    C.StartTransaction;
+    AssertTrue(C.ExplicitTransaction);
+    C.Commit;
+    AssertFalse(C.ExplicitTransaction);
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestStartTransactionAdoptsAmbient;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.Broker.InTx := True; // ambient transaction (auto-started by SQLdb)
+    C.StartTransaction;    // adopts it instead of failing
+    AssertTrue(C.Broker.StartCount = 0); // no second Begin
+    AssertTrue(C.ExplicitTransaction);
+    // a second explicit start is a clear error
+    try
+      C.StartTransaction;
+      Fail('Expected exception');
+    except
+      on E: EdConnection do
+        AssertTrue(Pos('already active', E.Message) > 0);
+    end;
+    C.Rollback;
+    AssertFalse(C.ExplicitTransaction);
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestRunInTransactionJoinsActiveTransaction;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.Broker.InTx := True; // ambient transaction (auto-started by SQLdb)
+    C.RunInTransaction(@NoopProc);
+    AssertTrue(C.Broker.StartCount = 0);  // did not start another one
+    AssertTrue(C.Broker.CommitCount = 0); // the owner commits
+    AssertTrue(C.Broker.RollbackCount = 0);
+    AssertTrue(C.InTransaction); // still open
+    AssertTrue(C.ExplicitTransaction); // the scope adopted it
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestRunInTransactionJoinRollsBackOnException;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.Broker.InTx := True;
+    try
+      C.RunInTransaction(@RaisingProc);
+      Fail('Expected exception');
+    except
+      on E: Exception do
+        AssertTrue(E.Message = 'boom');
+    end;
+    AssertTrue(C.Broker.RollbackCount = 1); // the whole transaction
+    AssertTrue(C.Broker.CommitCount = 0);
+    AssertFalse(C.InTransaction);
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestRunInTransactionRequiresProc;
+var
+  C: TMyQueryConnection;
+begin
+  C := TMyQueryConnection.Create(nil);
+  try
+    try
+      C.RunInTransaction(nil);
+      Fail('Expected exception');
+    except
+      on E: EdConnection do
+        AssertTrue(Pos('not assigned', E.Message) > 0);
+    end;
+    AssertTrue(C.Broker.StartCount = 0);
+  finally
+    C.Free;
   end;
 end;
 

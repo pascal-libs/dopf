@@ -21,7 +21,10 @@ This is a generic ORM (Object-Relational Mapping) operator that simplifies datab
 By specializing it with `TPerson`, it manages CRUD operations for the Person table directly, reducing boilerplate SQL code.
 
 ### Apply:
-Apply commits any pending changes (e.g., inserts, updates, or deletes) to the database.
+Apply flushes the query's cached updates (if any) and commits the active transaction.
+The statements themselves run immediately when `Add`, `Modify`, `Remove` or `Execute` is
+called — nothing is buffered until `Apply`. If no transaction is active, `Apply` logs a
+warning and does nothing, unless `StrictTransactions` is enabled (see Transactions).
 
 ### Add, Modify and Remove:
 Add: Adds a new record to the database.
@@ -76,23 +79,30 @@ begin
   opf := Topf.Create(con, 'person');
   pers := Topf.TEntities.Create;
   try
+    con.StartTransaction;
+    try
+      WriteLn('Add Anonymous');
+      opf.Entity.Id := 1000;
+      opf.Entity.Name := 'Anonymous';
+      opf.Add(False);
+      WriteLn('Done.');
 
-    WriteLn('Add Anonymous');
-    opf.Entity.Id := 1000;
-    opf.Entity.Name := 'Anonymous';
-    opf.Add(False);
-    WriteLn('Done.');
+      WriteLn('Modify name of Waldir to Waldir Paim');
+      opf.Entity.Id := 1001;
+      opf.Entity.Name := 'Waldir Paim';
+      opf.Modify;
+      WriteLn('Done.');
 
-    WriteLn('Modify name of Waldir to Waldir Paim');
-    opf.Entity.Id := 1001;
-    opf.Entity.Name := 'Waldir Paim';
-    opf.Modify;
-    WriteLn('Done.');
+      WriteLn('Remove Anonymous');
+      opf.Entity.Id := 1000;
+      opf.Remove;
+      WriteLn('Done.');
 
-    WriteLn('Remove Anonymous');
-    opf.Entity.Id := 1000;
-    opf.Remove;
-    WriteLn('Done.');
+      opf.Apply; // commits the transaction
+    except
+      con.Rollback;
+      raise;
+    end;
 
     WriteLn('Get Waldir Paim');
     opf.Entity.Id := 1001;
@@ -107,9 +117,7 @@ begin
     for i in pers do
       WriteLn(i.Id, ', ', i.Name);
     pers.Clear;
-    WriteLn('Done.');    
-
-    opf.Apply;
+    WriteLn('Done.');
   finally
     pers.Free;
     opf.Free;
@@ -122,3 +130,81 @@ begin
 end.
  
 ```
+
+## Transactions
+
+All queries of a connector share a single transaction, and with FPC SQLdb it
+is started implicitly by the first statement: read a row and the transaction
+is already open. `Add`, `Modify`, `Remove` and `Query.Execute` run their SQL
+immediately inside it, and `Apply` flushes the query's cached updates (if
+any) and commits. In effect that is an implicit unit of work ending at
+`Apply`/`Commit` — with two traps: a forgotten commit rolls the writes back
+when the connection closes, and `StartTransaction` after any statement finds
+the transaction already active.
+
+dOPF makes the model explicit instead:
+
+- `StartTransaction` adopts an implicitly started transaction (only a
+  transaction you started yourself makes it raise `EdConnection`), so an
+  explicit unit of work can begin anywhere in the session.
+- The query-side transaction methods (`Apply`, `ApplyRetaining`, `Undo`,
+  `UndoRetaining`, `Commit`, `Rollback`) require an active transaction; with
+  none active they are ignored with a logged warning (compatibility mode).
+
+An explicit unit of work:
+
+```pascal
+con.StartTransaction;
+try
+  opf.Add;
+  opf.Modify;
+  opf.Apply; // commits
+except
+  con.Rollback;
+  raise;
+end;
+```
+
+A scoped helper without the try/except boilerplate:
+
+```pascal
+type
+  TOrdersForm = class(TForm)
+    procedure SaveAll;
+  end;
+
+procedure TOrdersForm.SaveAll;
+begin
+  opf.Add;
+  opf.Modify;
+end;
+
+con.RunInTransaction(@SaveAll); // atomic: Commit on success, Rollback on error
+```
+
+If a transaction is already active, `RunInTransaction` joins it: the callback
+runs inside it, an error rolls back the whole transaction, and on success the
+transaction is left open for its owner to commit. A missing callback raises
+`EdConnection`.
+
+### StrictTransactions
+
+By default dOPF keeps the historical behavior: writes run inside the implicit
+transaction whether you opened one or not. Set
+
+```pascal
+con.StrictTransactions := True;
+```
+
+to require an explicit transaction for every write: `Add`, `Modify`,
+`Remove`, `Query.Execute`, the cached-update flushes `Query.Apply`,
+`Query.ApplyRetaining` and `Query.ApplyUpdates`, and the dataset writes
+`Query.Post` / `Query.Delete` (they write directly when SQLdb's
+`sqoAutoApplyUpdates` is enabled) raise `EdQuery` until you call
+`StartTransaction` or `RunInTransaction` (a commit without an active
+transaction becomes an `EdQuery` error as well). `Query.Open` and
+`Active := True` reject statements whose leading keyword is a write verb
+(PostgreSQL `insert ... returning` included); the SQL text is not parsed,
+so a CTE-wrapped write is not detected — route such statements through
+`Query.Execute`. This is the intended contract; the default will change
+to `True` in dOPF 4.0.

@@ -4,7 +4,8 @@ program console;
 
 uses
   Classes, consoletestrunner,
-  test_insertbuilder, test_dclasses, test_dopf, test_dutils
+  test_insertbuilder, test_dclasses, test_dopf, test_dutils,
+  test_transactions
   ;
 type
 

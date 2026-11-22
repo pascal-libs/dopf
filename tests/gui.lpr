@@ -4,7 +4,8 @@ program gui;
 
 uses
   Interfaces, Forms, GuiTestRunner,
-  test_insertbuilder, test_dclasses, test_dopf, test_dutils;
+  test_insertbuilder, test_dclasses, test_dopf, test_dutils,
+  test_transactions;
 
 {$R *.res}
 

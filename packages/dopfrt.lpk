@@ -16,7 +16,7 @@
     </CompilerOptions>
     <Description Value="Object Persistence Framework"/>
     <License Value="See the file LICENSE, included in this distribution, for details about the copyright."/>
-    <Version Major="3" Minor="2"/>
+    <Version Major="3" Minor="3"/>
     <Files Count="6">
       <Item1>
         <Filename Value="..\core\dclasses.pas"/>

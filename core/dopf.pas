@@ -31,6 +31,8 @@ type
 
   TdOpfUpdateKind = (ukAdd, ukModify, ukRemove);
 
+  TdTransactionProc = procedure of object;
+
   TdLogType = (ltTransaction, ltSQL, ltConnection, ltErrors, ltCustom);
 
   TdLogFilter = set of TdLogType;
@@ -119,6 +121,8 @@ type
   private
     FBroker: T1;
     FLogger: T2;
+    FStrictTransactions: Boolean;
+    FExplicitTransaction: Boolean;
     function GetConnected: Boolean;
     function GetDatabase: string;
     function GetDriver: string;
@@ -127,6 +131,7 @@ type
     function GetPort: Integer;
     function GetUser: string;
     function GetConnectorType: string;
+    function GetExplicitTransaction: Boolean;
     procedure SetConnected(const AValue: Boolean);
     procedure SetDatabase(const AValue: string);
     procedure SetDriver(const AValue: string);
@@ -150,9 +155,14 @@ type
     procedure Rollback;
     procedure RollbackRetaining;
     function InTransaction: Boolean;
+    procedure RunInTransaction(AProc: TdTransactionProc);
     property Broker: T1 read FBroker write FBroker;
     property Logger: T2 read FLogger write FLogger;
     property Connected: Boolean read GetConnected write SetConnected;
+    property StrictTransactions: Boolean read FStrictTransactions
+      write FStrictTransactions default False;
+    // True from StartTransaction/RunInTransaction until the transaction ends.
+    property ExplicitTransaction: Boolean read GetExplicitTransaction;
   published
     property Driver: string read GetDriver write SetDriver;
     property Database: string read GetDatabase write SetDatabase;
@@ -270,6 +280,10 @@ type
     procedure CheckConnection; virtual;
     procedure CheckBrokerClass; virtual;
     procedure CheckBroker; virtual;
+    function CheckTransaction(const AMethod: string;
+      ARequireExplicit: Boolean = False): Boolean; virtual;
+    procedure CheckExplicitTransaction(const AMethod: string); virtual;
+    procedure CheckReadonlyStatement(const AMethod: string); virtual;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -862,16 +876,29 @@ end;
 procedure TdGConnection.StartTransaction;
 begin
   CheckBroker;
-  FLogger.Log(ltTransaction, 'Trying Connection.StartTransaction');
-  try
-    FBroker.StartTransaction;
-  except
-    on E: Exception do
-    begin
-      FLogger.Log(ltErrors, E.Message);
-      raise;
+  if ExplicitTransaction then
+    raise EdConnection.Create(
+      'StartTransaction: a transaction is already active.');
+  if InTransaction then
+  begin
+    // SQLdb started the shared transaction implicitly (e.g. by a previous
+    // read); it holds no work of its own, so adopt it instead of failing.
+    FLogger.Log(ltTransaction, 'Connection.StartTransaction adopts the active transaction');
+  end
+  else
+  begin
+    FLogger.Log(ltTransaction, 'Trying Connection.StartTransaction');
+    try
+      FBroker.StartTransaction;
+    except
+      on E: Exception do
+      begin
+        FLogger.Log(ltErrors, E.Message);
+        raise;
+      end;
     end;
   end;
+  FExplicitTransaction := True;
 end;
 
 procedure TdGConnection.Commit;
@@ -887,6 +914,7 @@ begin
       raise;
     end;
   end;
+  FExplicitTransaction := False;
 end;
 
 procedure TdGConnection.CommitRetaining;
@@ -917,6 +945,7 @@ begin
       raise;
     end;
   end;
+  FExplicitTransaction := False;
 end;
 
 procedure TdGConnection.RollbackRetaining;
@@ -938,6 +967,55 @@ function TdGConnection.InTransaction: Boolean;
 begin
   CheckBroker;
   Result := FBroker.InTransaction;
+end;
+
+function TdGConnection.GetExplicitTransaction: Boolean;
+begin
+  // The transaction may have ended elsewhere (e.g. Query.Apply); drop the
+  // flag as soon as it is no longer active.
+  if FExplicitTransaction and not InTransaction then
+    FExplicitTransaction := False;
+  Result := FExplicitTransaction;
+end;
+
+procedure TdGConnection.RunInTransaction(AProc: TdTransactionProc);
+var
+  Joined: Boolean;
+begin
+  CheckBroker;
+  if not Assigned(AProc) then
+    raise EdConnection.Create(
+      'RunInTransaction: the procedure is not assigned.');
+  // SQLdb starts the shared transaction implicitly on the first statement,
+  // so an "already active" transaction is the normal case: join it instead
+  // of failing. On error the whole transaction is rolled back; on success it
+  // stays open for its owner to commit.
+  Joined := InTransaction;
+  if Joined then
+  begin
+    FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction (joined)');
+    // the scope takes responsibility for the ambient transaction, exactly
+    // like StartTransaction adopting it
+    FExplicitTransaction := True;
+  end
+  else
+  begin
+    FLogger.Log(ltTransaction, 'Trying Connection.RunInTransaction');
+    StartTransaction;
+  end;
+  try
+    AProc;
+    if not Joined then
+      Commit;
+  except
+    on E: Exception do
+    begin
+      FLogger.Log(ltErrors, E.Message);
+      if InTransaction then
+        Rollback;
+      raise;
+    end;
+  end;
 end;
 
 { TdQueryBroker }
@@ -1328,6 +1406,106 @@ begin
     raise EdQuery.Create('Connection not assigned.');
 end;
 
+procedure TdGQuery.CheckExplicitTransaction(const AMethod: string);
+begin
+  // a query without an owner has no strict mode to enforce
+  if (Connection = nil) or not Connection.StrictTransactions or
+    Connection.ExplicitTransaction then
+    Exit;
+  raise EdQuery.CreateFmt('"%s" requires an explicit transaction ' +
+    '(Connection.StrictTransactions is enabled). Use Connection.' +
+    'StartTransaction ... Apply or Connection.RunInTransaction.', [AMethod]);
+end;
+
+procedure TdGQuery.CheckReadonlyStatement(const AMethod: string);
+const
+  WriteVerbs: array [0..15] of string = (
+    'insert', 'update', 'delete', 'replace', 'merge', 'create', 'drop',
+    'alter', 'truncate', 'grant', 'revoke', 'begin', 'commit', 'rollback',
+    'savepoint', 'call');
+var
+  S, V: string;
+  Depth, I: Integer;
+begin
+  if (Connection = nil) or not Connection.StrictTransactions or
+    Connection.ExplicitTransaction then
+    Exit;
+  // SQLdb can open statements that return rows, and some of them write
+  // (e.g. PostgreSQL "insert ... returning"); there is no full SQL parser
+  // here, leading comments are skipped and the leading verb decides.
+  S := LowerCase(Trim(SQL.Text));
+  while True do
+  begin
+    if (Copy(S, 1, 2) = '--') or (Copy(S, 1, 1) = '#') then
+    begin
+      // line comment: up to the end of line
+      I := Pos(#10, S);
+      if I = 0 then
+        S := ''
+      else
+        S := Trim(Copy(S, I + 1, MaxInt));
+    end
+    else if Copy(S, 1, 2) = '/*' then
+    begin
+      // block comment, nested the PostgreSQL way
+      // (System.Delete: the class has its own parameterless Delete)
+      Depth := 1;
+      System.Delete(S, 1, 2);
+      while (Depth > 0) and (S <> '') do
+        if Copy(S, 1, 2) = '/*' then
+        begin
+          Inc(Depth);
+          System.Delete(S, 1, 2);
+        end
+        else if Copy(S, 1, 2) = '*/' then
+        begin
+          Dec(Depth);
+          System.Delete(S, 1, 2);
+        end
+        else
+          System.Delete(S, 1, 1);
+      S := Trim(S);
+    end
+    else
+      Break;
+  end;
+  // take the leading verb: it may be followed by any SQL whitespace, '('
+  // or an inline comment marker (PostgreSQL treats comments as whitespace)
+  I := 1;
+  while (I <= Length(S)) and not (S[I] in [' ', #9, #10, #13, '(',
+    '-', '#', '/']) do
+    Inc(I);
+  V := Copy(S, 1, I - 1);
+  for I := Low(WriteVerbs) to High(WriteVerbs) do
+    if V = WriteVerbs[I] then
+      raise EdQuery.CreateFmt('"%s" received the write statement "%s..." ' +
+        'without an explicit transaction (Connection.StrictTransactions ' +
+        'is enabled). Use Query.Execute inside StartTransaction ... Apply ' +
+        'or Connection.RunInTransaction.', [AMethod, WriteVerbs[I]]);
+end;
+
+function TdGQuery.CheckTransaction(const AMethod: string;
+  ARequireExplicit: Boolean): Boolean;
+begin
+  if Connection.InTransaction then
+  begin
+    // A read leaves the implicit transaction active; in strict mode the
+    // write-flushing methods may not commit it without an explicit unit.
+    if ARequireExplicit then
+      CheckExplicitTransaction(AMethod);
+    Exit(True);
+  end;
+  if Connection.StrictTransactions then
+    raise EdQuery.CreateFmt(
+      '"%s" requires an active transaction. Use Connection.StartTransaction ... %s ' +
+      'or Connection.RunInTransaction.', [AMethod, AMethod]);
+  Connection.Logger.Log(ltTransaction, Format(
+    'Warning: "%s" ignored: no active transaction. ' +
+    'Set Connection.StrictTransactions := True to turn this into an error.',
+    [AMethod]));
+  Result := False;
+end;
+
 function TdGQuery.GetActive: Boolean;
 begin
   CheckBroker;
@@ -1415,6 +1593,8 @@ end;
 procedure TdGQuery.SetActive(const AValue: Boolean);
 begin
   CheckBroker;
+  if AValue then
+    CheckReadonlyStatement('Query.Active');
   FBroker.Active := AValue;
 end;
 
@@ -1446,6 +1626,7 @@ procedure TdGQuery.ApplyUpdates;
 begin
   CheckBroker;
   CheckConnection;
+  CheckExplicitTransaction('Query.ApplyUpdates');
   Connection.Logger.Log(ltCustom, 'Trying Query.ApplyUpdates');
   try
     FBroker.ApplyUpdates;
@@ -1479,6 +1660,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Apply');
+  if not CheckTransaction('Query.Apply', True) then
+    Exit;
   try
     FBroker.Apply;
   except
@@ -1495,6 +1678,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.ApplyRetaining');
+  if not CheckTransaction('Query.ApplyRetaining', True) then
+    Exit;
   try
     FBroker.ApplyRetaining;
   except
@@ -1511,6 +1696,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Undo');
+  if not CheckTransaction('Query.Undo') then
+    Exit;
   try
     FBroker.Undo;
   except
@@ -1527,6 +1714,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.UndoRetaining');
+  if not CheckTransaction('Query.UndoRetaining') then
+    Exit;
   try
     FBroker.UndoRetaining;
   except
@@ -1543,6 +1732,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Commit');
+  if not CheckTransaction('Query.Commit') then
+    Exit;
   try
     FBroker.Commit;
   except
@@ -1559,6 +1750,8 @@ begin
   CheckBroker;
   CheckConnection;
   Connection.Logger.Log(ltTransaction, 'Trying Query.Rollback');
+  if not CheckTransaction('Query.Rollback') then
+    Exit;
   try
     FBroker.Rollback;
   except
@@ -1597,6 +1790,8 @@ end;
 procedure TdGQuery.Delete;
 begin
   CheckBroker;
+  // same as Post: sqoAutoApplyUpdates can turn Delete into a direct write
+  CheckExplicitTransaction('Query.Delete');
   FBroker.Delete;
 end;
 
@@ -1606,6 +1801,7 @@ var
 begin
   CheckBroker;
   CheckConnection;
+  CheckReadonlyStatement('Query.Open');
   S := Trim(SQL.Text);
   dUtils.dParameterizeSQL(S, Params, Nulls);
   Connection.Logger.Log(ltSQL, 'Trying Query.Open: ' + S);
@@ -1629,6 +1825,11 @@ end;
 procedure TdGQuery.Refresh;
 begin
   CheckBroker;
+  // TDataSet.Refresh posts pending edits first, and with SQLdb's
+  // sqoAutoApplyUpdates that post writes; in strict mode such a flush
+  // needs an explicit transaction, a plain re-read stays allowed
+  if Modified then
+    CheckExplicitTransaction('Query.Refresh');
   FBroker.Refresh;
 end;
 
@@ -1659,6 +1860,9 @@ end;
 procedure TdGQuery.Post;
 begin
   CheckBroker;
+  // with SQLdb's sqoAutoApplyUpdates Post itself writes; in strict mode that
+  // must stay inside an explicit transaction like any other write
+  CheckExplicitTransaction('Query.Post');
   FBroker.Post;
 end;
 
@@ -1668,6 +1872,7 @@ var
 begin
   CheckBroker;
   CheckConnection;
+  CheckExplicitTransaction('Query.Execute');
   S := Trim(SQL.Text);
   dUtils.dParameterizeSQL(S, Params, Nulls);
   Connection.Logger.Log(ltSQL, 'Trying Query.Execute: ' + S);
