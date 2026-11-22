@@ -184,7 +184,16 @@ end;
 
 destructor TdSQLdbConnectionBroker.Destroy;
 begin
-  FreeAndNil(FCon);
+  // TSQLConnection.Destroy (fcl-db 3.2.2) sets Connected := False for a
+  // still-open connection, which runs the same client library teardown
+  // as Disconnect; without the lock it could race a parallel transition
+  // of another broker of the process (Codex review, PR #12).
+  EnterCriticalSection(ConnectionLock);
+  try
+    FreeAndNil(FCon);
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
   inherited Destroy;
 end;
 
