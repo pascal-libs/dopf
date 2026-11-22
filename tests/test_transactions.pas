@@ -36,6 +36,7 @@ type
     procedure TestApplyStrictRequiresExplicitTransaction;
     procedure TestStrictWriteRequiresExplicitTransaction;
     procedure TestStrictPostWithAutoApplyRequiresExplicit;
+    procedure TestStrictOpenWithWriteStatementRequiresExplicit;
     procedure TestStrictRunInTransactionAfterRead;
     procedure TestExplicitTransactionApplyCommits;
     procedure TestRunInTransactionCommits;
@@ -223,6 +224,41 @@ begin
     end;
   finally
     Qy.Free;
+  end;
+  AssertRowCount(0);
+end;
+
+procedure TTestTransactions.TestStrictOpenWithWriteStatementRequiresExplicit;
+var
+  Qy: TdSQLdbQuery;
+begin
+  FCon.StrictTransactions := True;
+  try
+    Qy := TdSQLdbQuery.Create(FCon);
+    try
+      Qy.SQL.Text := 'select * from person';
+      Qy.Open; // plain reads stay allowed
+      Qy.Close;
+      Qy.SQL.Text := 'insert into person (name) values (''Blocked'')';
+      try
+        Qy.Open;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('write statement', E.Message) > 0);
+      end;
+      try
+        Qy.Active := True; // same path via the property
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('write statement', E.Message) > 0);
+      end;
+    finally
+      Qy.Free;
+    end;
+  finally
+    FCon.StrictTransactions := False;
   end;
   AssertRowCount(0);
 end;

@@ -202,5 +202,9 @@ to require an explicit transaction for every write: `Add`, `Modify`,
 `Query.Post` / `Query.Delete` (they write directly when SQLdb's
 `sqoAutoApplyUpdates` is enabled) raise `EdQuery` until you call
 `StartTransaction` or `RunInTransaction` (a commit without an active
-transaction becomes an `EdQuery` error as well). This is the intended
-contract; the default will change to `True` in dOPF 4.0.
+transaction becomes an `EdQuery` error as well). `Query.Open` and
+`Active := True` reject statements whose leading keyword is a write verb
+(PostgreSQL `insert ... returning` included); the SQL text is not parsed,
+so a CTE-wrapped write is not detected — route such statements through
+`Query.Execute`. This is the intended contract; the default will change
+to `True` in dOPF 4.0.

@@ -283,6 +283,7 @@ type
     function CheckTransaction(const AMethod: string;
       ARequireExplicit: Boolean = False): Boolean; virtual;
     procedure CheckExplicitTransaction(const AMethod: string); virtual;
+    procedure CheckReadonlyStatement(const AMethod: string); virtual;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -1413,6 +1414,36 @@ begin
       'StartTransaction ... Apply or Connection.RunInTransaction.', [AMethod]);
 end;
 
+procedure TdGQuery.CheckReadonlyStatement(const AMethod: string);
+const
+  WriteVerbs: array [0..15] of string = (
+    'insert', 'update', 'delete', 'replace', 'merge', 'create', 'drop',
+    'alter', 'truncate', 'grant', 'revoke', 'begin', 'commit', 'rollback',
+    'savepoint', 'call');
+var
+  S, V: string;
+  I: Integer;
+begin
+  if (Connection = nil) or not Connection.StrictTransactions or
+    Connection.ExplicitTransaction then
+    Exit;
+  // SQLdb can open statements that return rows, and some of them write
+  // (e.g. PostgreSQL "insert ... returning"); there is no full SQL parser
+  // here, the leading verb decides.
+  S := LowerCase(Trim(SQL.Text));
+  I := Pos(' ', S);
+  if I > 0 then
+    V := Copy(S, 1, I - 1)
+  else
+    V := S;
+  for I := Low(WriteVerbs) to High(WriteVerbs) do
+    if V = WriteVerbs[I] then
+      raise EdQuery.CreateFmt('"%s" received the write statement "%s..." ' +
+        'without an explicit transaction (Connection.StrictTransactions ' +
+        'is enabled). Use Query.Execute inside StartTransaction ... Apply ' +
+        'or Connection.RunInTransaction.', [AMethod, WriteVerbs[I]]);
+end;
+
 function TdGQuery.CheckTransaction(const AMethod: string;
   ARequireExplicit: Boolean): Boolean;
 begin
@@ -1522,6 +1553,8 @@ end;
 procedure TdGQuery.SetActive(const AValue: Boolean);
 begin
   CheckBroker;
+  if AValue then
+    CheckReadonlyStatement('Query.Active');
   FBroker.Active := AValue;
 end;
 
@@ -1728,6 +1761,7 @@ var
 begin
   CheckBroker;
   CheckConnection;
+  CheckReadonlyStatement('Query.Open');
   S := Trim(SQL.Text);
   dUtils.dParameterizeSQL(S, Params, Nulls);
   Connection.Logger.Log(ltSQL, 'Trying Query.Open: ' + S);
