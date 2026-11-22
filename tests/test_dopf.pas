@@ -23,6 +23,7 @@ type
     procedure TestApplyStrictWithoutTransactionRaises;
     procedure TestApplyStrictRequiresExplicitTransaction;
     procedure TestApplyUpdatesStrictRequiresExplicitTransaction;
+    procedure TestPostDeleteStrictRequireExplicitTransaction;
     procedure TestApplyWithTransactionCallsBroker;
     procedure TestExecuteStrictRequiresExplicitTransaction;
     procedure TestExplicitTransactionLifecycle;
@@ -346,6 +347,40 @@ begin
     try
       try
         Q.ApplyUpdates;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+    finally
+      Q.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestDOpf.TestPostDeleteStrictRequireExplicitTransaction;
+var
+  C: TMyQueryConnection;
+  Q: TMyQuery;
+begin
+  GBrokerConnection := nil;
+  GBrokerConnectionSet := False;
+  C := TMyQueryConnection.Create(nil);
+  try
+    C.StrictTransactions := True;
+    Q := TMyQuery.Create(C);
+    try
+      try
+        Q.Post;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+      try
+        Q.Delete;
         Fail('Expected exception');
       except
         on E: EdQuery do

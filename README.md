@@ -197,8 +197,10 @@ con.StrictTransactions := True;
 ```
 
 to require an explicit transaction for every write: `Add`, `Modify`,
-`Remove`, `Query.Execute` and the cached-update flushes `Query.Apply`,
-`Query.ApplyRetaining` and `Query.ApplyUpdates` raise `EdQuery` until you
-call `StartTransaction` or `RunInTransaction` (a commit without an active
+`Remove`, `Query.Execute`, the cached-update flushes `Query.Apply`,
+`Query.ApplyRetaining` and `Query.ApplyUpdates`, and the dataset writes
+`Query.Post` / `Query.Delete` (they write directly when SQLdb's
+`sqoAutoApplyUpdates` is enabled) raise `EdQuery` until you call
+`StartTransaction` or `RunInTransaction` (a commit without an active
 transaction becomes an `EdQuery` error as well). This is the intended
 contract; the default will change to `True` in dOPF 4.0.

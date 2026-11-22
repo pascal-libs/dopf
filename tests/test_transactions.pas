@@ -5,7 +5,7 @@ unit test_transactions;
 interface
 
 uses
-  fpcunit, testregistry, dopf, dSQLdbBroker, sqlite3conn, Classes;
+  fpcunit, testregistry, dopf, dSQLdbBroker, sqlite3conn, sqldb, Classes;
 
 type
   TPerson = class(TObject)
@@ -35,6 +35,7 @@ type
     procedure TestApplyStrictWithoutTransactionRaises;
     procedure TestApplyStrictRequiresExplicitTransaction;
     procedure TestStrictWriteRequiresExplicitTransaction;
+    procedure TestStrictPostWithAutoApplyRequiresExplicit;
     procedure TestStrictRunInTransactionAfterRead;
     procedure TestExplicitTransactionApplyCommits;
     procedure TestRunInTransactionCommits;
@@ -194,6 +195,36 @@ begin
   finally
     FCon.StrictTransactions := False;
   end;
+end;
+
+procedure TTestTransactions.TestStrictPostWithAutoApplyRequiresExplicit;
+var
+  Qy: TdSQLdbQuery;
+begin
+  Qy := TdSQLdbQuery.Create(FCon);
+  try
+    (Qy.DataSet as TSQLQuery).Options := [sqoAutoApplyUpdates];
+    Qy.SQL.Text := 'select * from person';
+    Qy.Open;
+    FCon.StrictTransactions := True;
+    try
+      Qy.Append;
+      Qy.Field('name').AsString := 'Blocked';
+      try
+        Qy.Post; // with sqoAutoApplyUpdates Post itself writes
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+      Qy.Cancel;
+    finally
+      FCon.StrictTransactions := False;
+    end;
+  finally
+    Qy.Free;
+  end;
+  AssertRowCount(0);
 end;
 
 procedure TTestTransactions.TestStrictRunInTransactionAfterRead;

@@ -1717,6 +1717,8 @@ end;
 procedure TdGQuery.Delete;
 begin
   CheckBroker;
+  // same as Post: sqoAutoApplyUpdates can turn Delete into a direct write
+  CheckExplicitTransaction('Query.Delete');
   FBroker.Delete;
 end;
 
@@ -1779,6 +1781,9 @@ end;
 procedure TdGQuery.Post;
 begin
   CheckBroker;
+  // with SQLdb's sqoAutoApplyUpdates Post itself writes; in strict mode that
+  // must stay inside an explicit transaction like any other write
+  CheckExplicitTransaction('Query.Post');
   FBroker.Post;
 end;
 
