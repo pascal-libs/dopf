@@ -151,6 +151,7 @@ type
     procedure Disconnect;
     procedure StartTransaction;
     procedure Commit;
+    procedure CommitIfActive;
     procedure CommitRetaining;
     procedure Rollback;
     procedure RollbackRetaining;
@@ -915,6 +916,13 @@ begin
     end;
   end;
   FExplicitTransaction := False;
+end;
+
+procedure TdGConnection.CommitIfActive;
+begin
+  CheckBroker;
+  if InTransaction then
+    Commit;
 end;
 
 procedure TdGConnection.CommitRetaining;
