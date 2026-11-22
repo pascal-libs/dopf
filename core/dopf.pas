@@ -1448,21 +1448,22 @@ begin
     else if Copy(S, 1, 2) = '/*' then
     begin
       // block comment, nested the PostgreSQL way
+      // (System.Delete: the class has its own parameterless Delete)
       Depth := 1;
-      Delete(S, 1, 2);
+      System.Delete(S, 1, 2);
       while (Depth > 0) and (S <> '') do
         if Copy(S, 1, 2) = '/*' then
         begin
           Inc(Depth);
-          Delete(S, 1, 2);
+          System.Delete(S, 1, 2);
         end
         else if Copy(S, 1, 2) = '*/' then
         begin
           Dec(Depth);
-          Delete(S, 1, 2);
+          System.Delete(S, 1, 2);
         end
         else
-          Delete(S, 1, 1);
+          System.Delete(S, 1, 1);
       S := Trim(S);
     end
     else
