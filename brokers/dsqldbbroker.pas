@@ -153,6 +153,41 @@ type
 
 implementation
 
+var
+  // fcl-db loads, initialises and releases the client library of a driver
+  // (e.g. libmysqlclient) through unsynchronised process-global state: in
+  // FPC 3.2.2 TryInitialiseMysql raises the reference count before the
+  // function-pointer table is filled and before mysql_library_init runs,
+  // while DoReleaseMysql at count zero calls mysql_library_end + dlclose
+  // under the feet of threads still calling through those pointers. Two
+  // connectors of one process switching Connected in parallel (a real
+  // production incident: an AccessViolation with the instruction pointer
+  // in anonymous memory while two threads connected to MySQL at once) can
+  // therefore corrupt memory, so every connection transition of this
+  // broker is serialised process-wide.
+  ConnectionLock: TRTLCriticalSection;
+
+procedure EnsureConnected(ACon: TSQLConnector);
+begin
+  // SQLdb also opens a never-connected database on its own: MaybeConnect
+  // fires from TSQLTransaction.StartTransaction and from statement
+  // Prepare (query Open/ExecSQL/Active := True), outside ConnectionLock.
+  // That first open initialises the client library exactly like Connect,
+  // so it has to pass the lock as well (Codex re-review, PR #12). The
+  // fast path skips the lock once the connection is up: with
+  // KeepConnection it stays up for its whole life, so only the first
+  // open of each connector pays for the serialisation.
+  if ACon.Connected then
+    Exit;
+  EnterCriticalSection(ConnectionLock);
+  try
+    if not ACon.Connected then
+      ACon.Connected := True;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
+end;
+
 { TdSQLdbConnectionBroker }
 
 constructor TdSQLdbConnectionBroker.Create;
@@ -160,26 +195,54 @@ begin
   inherited Create;
   FCon := TSQLConnector.Create(nil);
   FCon.Transaction := TSQLTransaction.Create(FCon);
+  // Keep the physical link open when the last transaction ends. Without
+  // it fcl-db closes the connection on the final commit/rollback and
+  // MaybeConnect reopens it on the next statement, so every recreation
+  // cycles the unsynchronised client library load/init/unload described
+  // above; with it the cycle disappears for the whole connection life.
+  FCon.KeepConnection := True;
 end;
 
 destructor TdSQLdbConnectionBroker.Destroy;
 begin
-  FreeAndNil(FCon);
+  // TSQLConnection.Destroy (fcl-db 3.2.2) sets Connected := False for a
+  // still-open connection, which runs the same client library teardown
+  // as Disconnect; without the lock it could race a parallel transition
+  // of another broker of the process (Codex review, PR #12).
+  EnterCriticalSection(ConnectionLock);
+  try
+    FreeAndNil(FCon);
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
   inherited Destroy;
 end;
 
 procedure TdSQLdbConnectionBroker.Connect;
 begin
-  FCon.Connected := True;
+  // both directions of the transition run the client library
+  // load/init/unload machinery, hence the process-wide lock
+  EnterCriticalSection(ConnectionLock);
+  try
+    FCon.Connected := True;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
 end;
 
 procedure TdSQLdbConnectionBroker.Disconnect;
 begin
-  FCon.Connected := False;
+  EnterCriticalSection(ConnectionLock);
+  try
+    FCon.Connected := False;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
 end;
 
 procedure TdSQLdbConnectionBroker.StartTransaction;
 begin
+  EnsureConnected(FCon);
   FCon.Transaction.StartTransaction;
 end;
 
@@ -260,7 +323,14 @@ end;
 
 procedure TdSQLdbConnectionBroker.SetConnected(const AValue: Boolean);
 begin
-  FCon.Connected := AValue;
+  // the Connected property is the other entry point to the same
+  // transition as Connect/Disconnect and needs the same serialisation
+  EnterCriticalSection(ConnectionLock);
+  try
+    FCon.Connected := AValue;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
 end;
 
 procedure TdSQLdbConnectionBroker.SetDatabase(const AValue: string);
@@ -389,6 +459,10 @@ end;
 
 procedure TdSQLdbQueryBroker.SetActive(const AValue: Boolean);
 begin
+  // Active := True prepares the statement, which MaybeConnects; without
+  // a database the query must keep failing the way it did before
+  if AValue and Assigned(FCon) then
+    EnsureConnected(FCon);
   FQuery.Active := AValue;
 end;
 
@@ -528,6 +602,9 @@ end;
 
 procedure TdSQLdbQueryBroker.Open;
 begin
+  // Prepare inside Open may open the connection (MaybeConnect)
+  if Assigned(FCon) then
+    EnsureConnected(FCon);
   FQuery.Open;
 end;
 
@@ -568,6 +645,9 @@ end;
 
 procedure TdSQLdbQueryBroker.Execute;
 begin
+  // ExecSQL prepares the statement, which MaybeConnects
+  if Assigned(FCon) then
+    EnsureConnected(FCon);
   FQuery.ExecSQL;
 end;
 
@@ -616,6 +696,12 @@ procedure TdSQLdbQueryBroker.GotoBookmark(ABookmark: TBookmark);
 begin
   FQuery.GotoBookmark(ABookmark);
 end;
+
+initialization
+  InitCriticalSection(ConnectionLock);
+
+finalization
+  DoneCriticalSection(ConnectionLock);
 
 end.
 

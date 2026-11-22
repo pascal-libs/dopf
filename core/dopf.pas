@@ -472,6 +472,21 @@ type
 
 implementation
 
+var
+  // Every TdGConnection owns its TdLogger instance, but nothing keeps two
+  // connectors of one process from logging into the same file: that means
+  // two TFileStream handles writing one file in parallel, which corrupts
+  // the log and races inside the streams. The lock is process-wide (not
+  // per instance) for exactly that case, and Log appends at the real end
+  // of the file under it, because the file may have grown from the writes
+  // of another logger instance since this stream last wrote.
+  // The guarantee ends at the process boundary: several processes writing
+  // one log file are not coordinated, and cannot be refused either — the
+  // share mode that several loggers of one process need on Windows admits
+  // any process, and Unix has no share modes at all. Give every process
+  // its own log file (the date-suffixed names make that the natural setup).
+  LoggerLock: TRTLCriticalSection;
+
 procedure NotImplementedError;
 begin
   raise EdNotImplemented.Create('Not implemented.');
@@ -488,7 +503,13 @@ end;
 
 destructor TdLogger.Destroy;
 begin
-  FreeAndNil(FStream);
+  // a parallel Log of the same instance must not write into a freed stream
+  EnterCriticalSection(LoggerLock);
+  try
+    FreeAndNil(FStream);
+  finally
+    LeaveCriticalSection(LoggerLock);
+  end;
   inherited Destroy;
 end;
 
@@ -497,6 +518,8 @@ var
   D: string;
   F: TFileName;
 begin
+  // The caller holds LoggerLock (SetActive/SetFileName), so the stream
+  // swap cannot race a parallel Log of this instance.
   FreeAndNil(FStream);
   if Trim(FFileName) = '' then
     Exit;
@@ -506,22 +529,31 @@ begin
     D := '';
   F := D + ChangeFileExt(FFileName, '_' + FormatDateTime('yyyymmdd', Date) +
     ExtractFileExt(FFileName));
+  // fmShareDenyNone: without an explicit share mode TFileStream opens
+  // exclusively (at least on Windows), so a second logger instance of the
+  // same file would fail to open it altogether instead of appending
+  // alongside the first one. On Unix the share flags are ignored.
   if (not FOverwrite) and FileExists(F) then
   begin
-    FStream := TFileStream.Create(F, fmOpenReadWrite);
+    FStream := TFileStream.Create(F, fmOpenReadWrite or fmShareDenyNone);
     FStream.Seek(FStream.Size, soBeginning);
   end
   else
-    FStream := TFileStream.Create(F, fmCreate);
+    FStream := TFileStream.Create(F, fmCreate or fmShareDenyNone);
 end;
 
 procedure TdLogger.SetFileName(AValue: TFileName);
 begin
   if (Trim(AValue) <> '') and (AValue <> FFileName) then
   begin
-    FFileName := AValue;
-    if FActive then
-      OpenStream;
+    EnterCriticalSection(LoggerLock);
+    try
+      FFileName := AValue;
+      if FActive then
+        OpenStream;
+    finally
+      LeaveCriticalSection(LoggerLock);
+    end;
   end;
 end;
 
@@ -529,11 +561,18 @@ procedure TdLogger.SetActive(AValue: Boolean);
 begin
   if AValue <> FActive then
   begin
-    FActive := AValue;
-    if FActive then
-      OpenStream
-    else
-      FreeAndNil(FStream);
+    // closing frees the stream a parallel Log may be writing into, and
+    // opening recreates it: both go under the same lock as Log
+    EnterCriticalSection(LoggerLock);
+    try
+      FActive := AValue;
+      if FActive then
+        OpenStream
+      else
+        FreeAndNil(FStream);
+    finally
+      LeaveCriticalSection(LoggerLock);
+    end;
   end;
 end;
 
@@ -548,11 +587,22 @@ begin
     Delete(T, 1, 2);
     AMsg := FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz', Now) + ' - ' + T +
       ': ' + AMsg;
-    if Assigned(FStream) then
-    begin
-      FStream.Write(AMsg[1], Length(AMsg));
-      FStream.Write(LE[1], Length(LE));
+    // see LoggerLock above: the seek keeps every record an append at the
+    // file's real end, so records of several logger instances sharing one
+    // file interleave instead of overwriting each other
+    EnterCriticalSection(LoggerLock);
+    try
+      if Assigned(FStream) then
+      begin
+        FStream.Seek(0, soEnd);
+        FStream.Write(AMsg[1], Length(AMsg));
+        FStream.Write(LE[1], Length(LE));
+      end;
+    finally
+      LeaveCriticalSection(LoggerLock);
     end;
+    // the event fires outside the lock: a handler must stay free to log
+    // itself without deadlocking on the non-reentrant section
     if Assigned(FOnLogging) then
       FOnLogging(AType, AMsg);
   end;
@@ -2398,5 +2448,11 @@ procedure TdGEntityOpf.Remove(const AIgnoreProperties: Boolean);
 begin
   inherited Remove(FEntity, AIgnoreProperties);
 end;
+
+initialization
+  InitCriticalSection(LoggerLock);
+
+finalization
+  DoneCriticalSection(LoggerLock);
 
 end.
