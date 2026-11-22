@@ -281,6 +281,15 @@ begin
         on E: EdQuery do
           AssertTrue(Pos('write statement', E.Message) > 0);
       end;
+      Qy.SQL.Text := '/* outer /* inner */ tail */ insert into person ' +
+        '(name) values (''Blocked'')'; // nested block comment (PostgreSQL)
+      try
+        Qy.Open;
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('write statement', E.Message) > 0);
+      end;
     finally
       Qy.Free;
     end;

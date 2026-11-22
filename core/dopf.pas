@@ -1425,7 +1425,7 @@ const
     'savepoint', 'call');
 var
   S, V: string;
-  I: Integer;
+  Depth, I: Integer;
 begin
   if (Connection = nil) or not Connection.StrictTransactions or
     Connection.ExplicitTransaction then
@@ -1436,24 +1436,37 @@ begin
   S := LowerCase(Trim(SQL.Text));
   while True do
   begin
-    if Copy(S, 1, 2) = '--' then
-      I := Pos(#10, S)
-    else if Copy(S, 1, 1) = '#' then
-      I := Pos(#10, S)
+    if (Copy(S, 1, 2) = '--') or (Copy(S, 1, 1) = '#') then
+    begin
+      // line comment: up to the end of line
+      I := Pos(#10, S);
+      if I = 0 then
+        S := ''
+      else
+        S := Trim(Copy(S, I + 1, MaxInt));
+    end
     else if Copy(S, 1, 2) = '/*' then
     begin
-      I := Pos('*/', S);
-      if I > 0 then
-        I := I + 1; // skip past the closing marker
+      // block comment, nested the PostgreSQL way
+      Depth := 1;
+      Delete(S, 1, 2);
+      while (Depth > 0) and (S <> '') do
+        if Copy(S, 1, 2) = '/*' then
+        begin
+          Inc(Depth);
+          Delete(S, 1, 2);
+        end
+        else if Copy(S, 1, 2) = '*/' then
+        begin
+          Dec(Depth);
+          Delete(S, 1, 2);
+        end
+        else
+          Delete(S, 1, 1);
+      S := Trim(S);
     end
     else
       Break;
-    if I = 0 then
-    begin
-      S := '';
-      Break;
-    end;
-    S := Trim(Copy(S, I + 1, MaxInt));
   end;
   // take the leading verb: it may be followed by any SQL whitespace or '('
   I := 1;
