@@ -479,6 +479,11 @@ var
   // per instance) for exactly that case, and Log appends at the real end
   // of the file under it, because the file may have grown from the writes
   // of another logger instance since this stream last wrote.
+  // The guarantee ends at the process boundary: several processes writing
+  // one log file are not coordinated, and cannot be refused either — the
+  // share mode that several loggers of one process need on Windows admits
+  // any process, and Unix has no share modes at all. Give every process
+  // its own log file (the date-suffixed names make that the natural setup).
   LoggerLock: TRTLCriticalSection;
 
 procedure NotImplementedError;
