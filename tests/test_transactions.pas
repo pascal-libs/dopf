@@ -37,6 +37,7 @@ type
     procedure TestStrictWriteRequiresExplicitTransaction;
     procedure TestStrictPostWithAutoApplyRequiresExplicit;
     procedure TestStrictOpenWithWriteStatementRequiresExplicit;
+    procedure TestStrictRefreshWithPendingEditRequiresExplicit;
     procedure TestStrictRunInTransactionAfterRead;
     procedure TestExplicitTransactionApplyCommits;
     procedure TestRunInTransactionCommits;
@@ -270,6 +271,45 @@ begin
     FCon.StrictTransactions := False;
   end;
   AssertRowCount(0);
+end;
+
+procedure TTestTransactions.TestStrictRefreshWithPendingEditRequiresExplicit;
+var
+  Qy: TdSQLdbQuery;
+begin
+  FOpf.Entity.Name := 'seed';
+  FOpf.Add;
+  FCon.Commit; // leave no transaction
+  Qy := TdSQLdbQuery.Create(FCon);
+  try
+    (Qy.DataSet as TSQLQuery).Options := [sqoAutoApplyUpdates];
+    Qy.SQL.Text := 'select * from person';
+    FCon.StrictTransactions := True;
+    try
+      Qy.Open;
+      Qy.Refresh; // no pending edits: a plain re-read stays allowed
+      Qy.Edit;
+      Qy.Field('name').AsString := 'Renamed';
+      try
+        Qy.Refresh; // would post (and write) the pending edit
+        Fail('Expected exception');
+      except
+        on E: EdQuery do
+          AssertTrue(Pos('explicit transaction', E.Message) > 0);
+      end;
+      Qy.Cancel;
+      FCon.StartTransaction; // explicit unit (adopts the read transaction)
+      Qy.Edit;
+      Qy.Field('name').AsString := 'Renamed';
+      Qy.Refresh; // allowed inside the explicit transaction
+      Qy.Close;
+      FOpf.Apply;
+    finally
+      FCon.StrictTransactions := False;
+    end;
+  finally
+    Qy.Free;
+  end;
 end;
 
 procedure TTestTransactions.TestStrictRunInTransactionAfterRead;

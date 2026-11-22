@@ -1785,6 +1785,11 @@ end;
 procedure TdGQuery.Refresh;
 begin
   CheckBroker;
+  // TDataSet.Refresh posts pending edits first, and with SQLdb's
+  // sqoAutoApplyUpdates that post writes; in strict mode such a flush
+  // needs an explicit transaction, a plain re-read stays allowed
+  if Modified then
+    CheckExplicitTransaction('Query.Refresh');
   FBroker.Refresh;
 end;
 
