@@ -167,6 +167,27 @@ var
   // broker is serialised process-wide.
   ConnectionLock: TRTLCriticalSection;
 
+procedure EnsureConnected(ACon: TSQLConnector);
+begin
+  // SQLdb also opens a never-connected database on its own: MaybeConnect
+  // fires from TSQLTransaction.StartTransaction and from statement
+  // Prepare (query Open/ExecSQL/Active := True), outside ConnectionLock.
+  // That first open initialises the client library exactly like Connect,
+  // so it has to pass the lock as well (Codex re-review, PR #12). The
+  // fast path skips the lock once the connection is up: with
+  // KeepConnection it stays up for its whole life, so only the first
+  // open of each connector pays for the serialisation.
+  if ACon.Connected then
+    Exit;
+  EnterCriticalSection(ConnectionLock);
+  try
+    if not ACon.Connected then
+      ACon.Connected := True;
+  finally
+    LeaveCriticalSection(ConnectionLock);
+  end;
+end;
+
 { TdSQLdbConnectionBroker }
 
 constructor TdSQLdbConnectionBroker.Create;
@@ -221,6 +242,7 @@ end;
 
 procedure TdSQLdbConnectionBroker.StartTransaction;
 begin
+  EnsureConnected(FCon);
   FCon.Transaction.StartTransaction;
 end;
 
@@ -437,6 +459,10 @@ end;
 
 procedure TdSQLdbQueryBroker.SetActive(const AValue: Boolean);
 begin
+  // Active := True prepares the statement, which MaybeConnects; without
+  // a database the query must keep failing the way it did before
+  if AValue and Assigned(FCon) then
+    EnsureConnected(FCon);
   FQuery.Active := AValue;
 end;
 
@@ -576,6 +602,9 @@ end;
 
 procedure TdSQLdbQueryBroker.Open;
 begin
+  // Prepare inside Open may open the connection (MaybeConnect)
+  if Assigned(FCon) then
+    EnsureConnected(FCon);
   FQuery.Open;
 end;
 
@@ -616,6 +645,9 @@ end;
 
 procedure TdSQLdbQueryBroker.Execute;
 begin
+  // ExecSQL prepares the statement, which MaybeConnects
+  if Assigned(FCon) then
+    EnsureConnected(FCon);
   FQuery.ExecSQL;
 end;
 
