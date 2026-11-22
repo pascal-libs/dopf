@@ -1431,11 +1431,11 @@ begin
   // (e.g. PostgreSQL "insert ... returning"); there is no full SQL parser
   // here, the leading verb decides.
   S := LowerCase(Trim(SQL.Text));
-  I := Pos(' ', S);
-  if I > 0 then
-    V := Copy(S, 1, I - 1)
-  else
-    V := S;
+  // take the leading verb: it may be followed by any SQL whitespace or '('
+  I := 1;
+  while (I <= Length(S)) and not (S[I] in [' ', #9, #10, #13, '(']) do
+    Inc(I);
+  V := Copy(S, 1, I - 1);
   for I := Low(WriteVerbs) to High(WriteVerbs) do
     if V = WriteVerbs[I] then
       raise EdQuery.CreateFmt('"%s" received the write statement "%s..." ' +
