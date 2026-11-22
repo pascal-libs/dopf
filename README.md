@@ -81,6 +81,10 @@ begin
   try
     con.StartTransaction;
     try
+      WriteLn('Empty table');
+      opf.Empty;
+      WriteLn('Done.');
+
       WriteLn('Add Waldir');
       opf.Entity.Id := 1001;
       opf.Entity.Name := 'Waldir';
